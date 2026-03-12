@@ -592,7 +592,6 @@ function startExpedition() {
 
   // Tap canvas to walk
   sceneCanvas.addEventListener('click', expTapHandler);
-  sceneCanvas.addEventListener('touchend', expTapHandler);
 }
 
 function expTapHandler(e) {
@@ -633,8 +632,7 @@ function showEventUI(title, sub, choices) {
     const btn = document.createElement('button');
     btn.className = 'exp-btn ' + (c.style || 'walk');
     btn.textContent = c.label;
-    btn.addEventListener('click', c.action);
-    btn.addEventListener('touchend', e => { e.preventDefault(); c.action(); });
+    btn.addEventListener('click', e => { e.preventDefault(); c.action(); });
     wrap.appendChild(btn);
   });
   bar.classList.add('active');
@@ -657,8 +655,7 @@ function handleNodeArrival(node) {
   switch (node.type) {
     case 'start':
       showToast('Expedition started!');
-      expStopped = false;
-      showWalkPrompt();
+      resumeWalking();
       break;
 
     case 'monster':
@@ -822,7 +819,6 @@ function updateExpedition() {
 function endExpedition() {
   gameState = 'explore';
   sceneCanvas.removeEventListener('click', expTapHandler);
-  sceneCanvas.removeEventListener('touchend', expTapHandler);
   expMoving = false;
 
   const content = document.getElementById('summaryContent');
