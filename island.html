@@ -36,7 +36,16 @@
     overflow:hidden;
     border-bottom: 2px solid var(--border);
   }
-  body.in-battle #sceneWrap { flex: 1 1 55%; }
+  body.in-battle #sceneWrap { flex: 1 1 65%; }
+
+  /* HP bars overlaid on canvas */
+  #hpOverlay {
+    position:absolute; left:0; right:0; top:0;
+    padding:10px 10px 0;
+    pointer-events:none; display:none;
+    z-index:5;
+  }
+  #hpOverlay.active { display:flex; flex-direction:column; gap:4px; }
   #scene { width:100%; height:100%; display:block; }
 
   /* Encounter flash overlay */
@@ -123,15 +132,16 @@
     letter-spacing:1px; min-height:16px;
   }
 
-  /* Battle mode */
+  /* Battle mode — only moves + flee at bottom */
   #battleUI { display:none; padding:6px 10px 8px; }
-  #battleUI.active { display:flex; flex-direction:column; gap:5px; }
+  #battleUI.active { display:flex; flex-direction:column; gap:6px; }
 
   /* HP bars */
   .hp-section {
     display:flex; align-items:center; gap:6px;
-    padding:4px 8px; background:var(--card); border-radius:8px;
+    padding:4px 8px; background:rgba(17,24,39,0.85); border-radius:8px;
     border:1px solid var(--border);
+    backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
   }
   .hp-name {
     font-family:'Cinzel',serif; font-weight:700; font-size:11px;
@@ -164,7 +174,7 @@
 
   /* Moves grid */
   #movesGrid {
-    display:grid; grid-template-columns:1fr 1fr; gap:8px;
+    display:grid; grid-template-columns:1fr 1fr; gap:6px;
   }
   .move-btn {
     padding:10px 6px; border:none; border-radius:10px;
@@ -259,6 +269,20 @@
   <canvas id="scene"></canvas>
   <div id="flash"></div>
   <div id="zoneBadge">Verdantia — Forest</div>
+  <div id="hpOverlay">
+    <div class="hp-section" id="enemyHP">
+      <span class="hp-name" id="enemyName">???</span>
+      <span class="hp-lv" id="enemyLv">Lv5</span>
+      <div class="hp-bar-wrap"><div class="hp-bar" id="enemyBar" style="width:100%;background:var(--hp-green)"></div></div>
+      <span class="hp-text" id="enemyHPText">80/80</span>
+    </div>
+    <div class="hp-section" id="playerHP">
+      <span class="hp-name" id="playerName">???</span>
+      <span class="hp-lv" id="playerLv">Lv5</span>
+      <div class="hp-bar-wrap"><div class="hp-bar" id="playerBar" style="width:100%;background:var(--hp-green)"></div></div>
+      <span class="hp-text" id="playerHPText">100/100</span>
+    </div>
+  </div>
 </div>
 
 <div id="ui">
@@ -278,18 +302,6 @@
   </div>
 
   <div id="battleUI">
-    <div class="hp-section" id="enemyHP">
-      <span class="hp-name" id="enemyName">???</span>
-      <span class="hp-lv" id="enemyLv">Lv5</span>
-      <div class="hp-bar-wrap"><div class="hp-bar" id="enemyBar" style="width:100%;background:var(--hp-green)"></div></div>
-      <span class="hp-text" id="enemyHPText">80/80</span>
-    </div>
-    <div class="hp-section" id="playerHP">
-      <span class="hp-name" id="playerName">???</span>
-      <span class="hp-lv" id="playerLv">Lv5</span>
-      <div class="hp-bar-wrap"><div class="hp-bar" id="playerBar" style="width:100%;background:var(--hp-green)"></div></div>
-      <span class="hp-text" id="playerHPText">100/100</span>
-    </div>
     <div id="movesGrid"></div>
     <div id="battleBottom">
       <button id="runBtn" ontouchend="runFromBattle()" onclick="runFromBattle()">Flee</button>
@@ -1153,6 +1165,7 @@ function startBattle() {
   document.body.classList.add('in-battle');
   exploreUI.style.display = 'none';
   document.getElementById('zones').style.display = 'none';
+  document.getElementById('hpOverlay').classList.add('active');
   battleUI.classList.add('active');
 
   updateBattleUI();
@@ -1308,6 +1321,7 @@ function endBattle(result) {
 function dismissResult() {
   resultOverlay.classList.remove('active');
   battleUI.classList.remove('active');
+  document.getElementById('hpOverlay').classList.remove('active');
   document.body.classList.remove('in-battle');
   document.getElementById('zones').style.display = '';
   exploreUI.style.display = '';
