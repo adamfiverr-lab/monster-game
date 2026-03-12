@@ -268,7 +268,7 @@
 
   #expTopBar {
     display:flex; align-items:center; gap:8px;
-    padding:8px 12px 6px;
+    padding:8px 12px 4px;
   }
   #expStepLabel {
     font-family:'Cinzel',serif; font-weight:700; font-size:10px;
@@ -283,85 +283,61 @@
     height:100%; background:var(--gold); border-radius:3px;
     transition: width 0.5s ease;
   }
-  #expBackBtn {
-    flex:0 0 auto; padding:4px 10px; border:none; border-radius:8px;
-    font-family:'Cinzel',serif; font-weight:700; font-size:9px;
-    color:var(--muted); background:var(--card); border:1px solid var(--border);
-    cursor:pointer; letter-spacing:1px; text-transform:uppercase;
+  #expHPMini {
+    font-size:9px; color:var(--hp-green); flex:0 0 auto;
+    font-family:'Fira Code',monospace;
   }
 
-  #narrativeBox {
-    padding:6px 14px;
-    font-size:12px; line-height:1.5;
-    color:var(--text);
-    min-height:36px;
+  #expEventBar {
+    display:none; padding:4px 12px 8px;
+  }
+  #expEventBar.active { display:flex; flex-direction:column; gap:6px; }
+  #expEventText {
+    font-size:12px; color:var(--bright);
+    font-family:'Cinzel',serif; font-weight:700;
+    letter-spacing:0.5px;
+    text-align:center;
+  }
+  #expEventSub {
+    font-size:10px; color:var(--muted); text-align:center;
     letter-spacing:0.3px;
   }
-  #narrativeBox .event-title {
-    font-family:'Cinzel',serif; font-weight:700; font-size:13px;
-    color:var(--bright); margin-bottom:3px;
-    letter-spacing:1px;
-  }
-  #narrativeBox .event-desc {
-    color:var(--muted); font-size:11px;
-  }
-  #narrativeBox .loot-line {
-    color:var(--gold); font-size:11px; margin-top:4px;
-    font-weight:600;
-  }
-  #narrativeBox .heal-line {
-    color:var(--hp-green); font-size:11px; margin-top:4px;
-  }
-  #narrativeBox .danger-line {
-    color:var(--accent); font-size:11px; margin-top:4px;
-  }
-  #narrativeBox .lore-line {
-    color:#8888cc; font-size:11px; margin-top:4px;
-    font-style:italic;
-  }
-
-  #choicesWrap {
+  #expChoices {
     display:flex; gap:6px;
-    padding:6px 12px 10px;
-    flex-wrap:wrap;
   }
-  .choice-btn {
-    flex:1 1 auto; min-width:0;
-    padding:12px 8px; border:none; border-radius:10px;
+  .exp-btn {
+    flex:1; padding:12px 6px; border:none; border-radius:10px;
     font-family:'Cinzel',serif; font-weight:700; font-size:12px;
     letter-spacing:1px; text-transform:uppercase;
     cursor:pointer; transition:transform 0.1s;
-    text-align:center; line-height:1.2;
-    color:var(--bright);
+    text-align:center; color:#fff;
   }
-  .choice-btn:active { transform:scale(0.96); }
-  .choice-btn.primary {
-    background:linear-gradient(135deg, var(--accent) 0%, #991b1b 100%);
-    color:#fff;
-    box-shadow:0 3px 12px rgba(239,68,68,0.3);
+  .exp-btn:active { transform:scale(0.96); }
+  .exp-btn.fight { background:linear-gradient(135deg, var(--accent) 0%, #991b1b 100%); box-shadow:0 3px 10px rgba(239,68,68,0.3); }
+  .exp-btn.loot { background:linear-gradient(135deg, #92690a 0%, #b8860b 100%); box-shadow:0 3px 10px rgba(245,158,11,0.2); }
+  .exp-btn.heal { background:linear-gradient(135deg, #166534 0%, #15803d 100%); }
+  .exp-btn.info { background:var(--card); border:1px solid var(--border); color:var(--text); }
+  .exp-btn.walk { background:linear-gradient(135deg, #334155 0%, #475569 100%); }
+
+  #expWalkPrompt {
+    text-align:center; padding:6px 12px 10px;
+    font-size:11px; color:var(--muted); letter-spacing:1px;
+    font-family:'Cinzel',serif;
   }
-  .choice-btn.secondary {
-    background:var(--card); border:1px solid var(--border);
-    color:var(--text);
+
+  /* Toast notification on canvas */
+  #expToast {
+    position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
+    background:rgba(11,14,23,0.9); border:1px solid var(--border);
+    padding:6px 16px; border-radius:12px;
+    font-size:11px; color:var(--gold);
+    font-family:'Cinzel',serif; font-weight:700;
+    letter-spacing:1px; white-space:nowrap;
+    pointer-events:none; opacity:0;
+    transition:opacity 0.3s;
+    z-index:4;
   }
-  .choice-btn.gold {
-    background:linear-gradient(135deg, #92690a 0%, #b8860b 100%);
-    color:#fff;
-    box-shadow:0 3px 12px rgba(245,158,11,0.25);
-  }
-  .choice-btn.green {
-    background:linear-gradient(135deg, #166534 0%, #15803d 100%);
-    color:#fff;
-  }
-  .choice-btn.blue {
-    background:linear-gradient(135deg, #1e3a5f 0%, #1d4ed8 100%);
-    color:#fff;
-  }
-  .choice-btn .choice-sub {
-    display:block; font-family:'Fira Code',monospace;
-    font-size:8px; font-weight:400; color:rgba(255,255,255,0.6);
-    margin-top:2px; text-transform:none; letter-spacing:0;
-  }
+  #expToast.show { opacity:1; }
 
   /* Expedition summary overlay */
   #expSummary {
@@ -396,6 +372,7 @@
 <div id="sceneWrap">
   <canvas id="scene"></canvas>
   <div id="flash"></div>
+  <div id="expToast"></div>
   <div id="zoneBadge">Verdantia — Beach</div>
   <div id="hpOverlay">
     <div class="hp-section" id="enemyHP">
@@ -431,12 +408,16 @@
 
   <div id="expeditionUI">
     <div id="expTopBar">
-      <span id="expStepLabel">Step 1/8</span>
+      <span id="expStepLabel">1/8</span>
       <div id="expProgressWrap"><div id="expProgressBar" style="width:0%"></div></div>
-      <button id="expBackBtn" onclick="abandonExpedition()">Retreat</button>
+      <span id="expHPMini">95/95</span>
     </div>
-    <div id="narrativeBox"></div>
-    <div id="choicesWrap"></div>
+    <div id="expEventBar">
+      <div id="expEventText"></div>
+      <div id="expEventSub"></div>
+      <div id="expChoices"></div>
+    </div>
+    <div id="expWalkPrompt">Tap to walk</div>
   </div>
 
   <div id="battleUI">
@@ -493,526 +474,86 @@ let animT = 0;
 let currentZone = 'beach';
 let walkProgress = 0;
 let encounterTimer = 0;
+let scrollOffset = 0;
 
-// ---- EXPEDITION SYSTEM ----
-let expedition = null;  // current expedition data
-let expStep = 0;        // current node index
-let expScrollX = 0;     // parallax offset
-let expWalking = false;  // walking animation between nodes
-let expWalkT = 0;
-let expNodeObject = null; // what to draw on canvas at current node
-let expStats = { battles: 0, loot: [], healed: 0, lore: 0, gold: 0 };
+// ---- EXPEDITION SYSTEM (Side-Scrolling) ----
+let expNodes = [];          // {worldX, type, data, visited}
+let expPlayerX = 0;         // player world position
+let expCameraX = 0;         // camera world position
+let expMoving = false;      // is player walking
+let expStopped = false;     // stopped at a node
+let expCurrentNode = null;  // node player is at
+let expNodeIndex = 0;       // which node we're approaching
+let expStats = { battles:0, loot:[], healed:0, lore:0, gold:0 };
+let expToastTimer = null;
 
-const EXPEDITION_EVENTS = {
+// Node spacing in world units
+const NODE_SPACING = 250;
+const WALK_SPEED = 2.5;
+
+const EVENT_WEIGHTS = {
+  beach:   [{t:'monster',w:3},{t:'treasure',w:2},{t:'campfire',w:1},{t:'npc',w:2},{t:'landmark',w:2},{t:'hazard',w:1}],
+  forest:  [{t:'monster',w:3},{t:'treasure',w:2},{t:'campfire',w:1},{t:'npc',w:1},{t:'landmark',w:2},{t:'hazard',w:2}],
+  deepwoods:[{t:'monster',w:4},{t:'treasure',w:2},{t:'campfire',w:1},{t:'npc',w:1},{t:'landmark',w:2},{t:'hazard',w:3}],
+  cave:    [{t:'monster',w:4},{t:'treasure',w:3},{t:'campfire',w:1},{t:'npc',w:1},{t:'landmark',w:3},{t:'hazard',w:2}],
+};
+
+// Compact item tables
+const ITEMS = {
   beach: [
-    { type:'path', weight:2 },
-    { type:'monster', weight:3 },
-    { type:'treasure', weight:2 },
-    { type:'campfire', weight:1 },
-    { type:'npc', weight:2 },
-    { type:'landmark', weight:2 },
-    { type:'hazard', weight:1 },
-    { type:'fork', weight:1 },
+    { name:'Sea Crystal', effect:'heal', value:20 },
+    { name:'Pearl Shard', effect:'gold', value:30 },
+    { name:'Coral Crown', effect:'heal', value:40 },
   ],
   forest: [
-    { type:'path', weight:2 },
-    { type:'monster', weight:3 },
-    { type:'treasure', weight:2 },
-    { type:'campfire', weight:1 },
-    { type:'npc', weight:1 },
-    { type:'landmark', weight:2 },
-    { type:'hazard', weight:2 },
-    { type:'fork', weight:1 },
+    { name:'Verdant Root', effect:'heal', value:25 },
+    { name:'Hunter\'s Coin', effect:'gold', value:25 },
+    { name:'Sylvan Tear', effect:'heal', value:45 },
   ],
   deepwoods: [
-    { type:'path', weight:1 },
-    { type:'monster', weight:4 },
-    { type:'treasure', weight:2 },
-    { type:'campfire', weight:1 },
-    { type:'npc', weight:1 },
-    { type:'landmark', weight:2 },
-    { type:'hazard', weight:3 },
-    { type:'fork', weight:1 },
+    { name:'Shadow Moss', effect:'heal', value:30 },
+    { name:'Cursed Doubloon', effect:'gold', value:40 },
+    { name:'Heartwood Sap', effect:'heal', value:50 },
   ],
   cave: [
-    { type:'path', weight:1 },
-    { type:'monster', weight:4 },
-    { type:'treasure', weight:3 },
-    { type:'campfire', weight:1 },
-    { type:'npc', weight:1 },
-    { type:'landmark', weight:3 },
-    { type:'hazard', weight:2 },
-    { type:'fork', weight:1 },
+    { name:'Glowstone', effect:'heal', value:25 },
+    { name:'Vein Gold', effect:'gold', value:45 },
+    { name:'Dragon Scale', effect:'heal', value:50 },
   ],
 };
 
-const PATH_NARRATIVES = {
-  beach: [
-    'Warm sand shifts underfoot as waves lap the shore nearby...',
-    'Tide pools glimmer between sun-bleached rocks...',
-    'Seabirds circle overhead, calling to each other...',
-    'The coastal path follows the curve of the bay...',
-    'Salt spray hangs in the air as you push forward...',
-  ],
-  forest: [
-    'Dappled light filters through the canopy above...',
-    'Ancient roots wind across the dirt trail...',
-    'Birdsong fills the air as the forest deepens...',
-    'Ferns brush against your legs as the path narrows...',
-    'A stream babbles somewhere to your left...',
-  ],
-  deepwoods: [
-    'The canopy closes overhead, plunging you into twilight...',
-    'Thick fog clings to the mossy ground...',
-    'Strange luminescent fungi dot the twisted trees...',
-    'The silence here is absolute. Unsettling...',
-    'You can barely see the sky through the ancient branches...',
-  ],
-  cave: [
-    'Your footsteps echo through the darkness...',
-    'Water drips from stalactites into unseen pools...',
-    'Crystalline formations catch your faint light...',
-    'The passage narrows, then opens into a chamber...',
-    'Strange warmth rises from fissures in the rock...',
-  ],
-};
-
-const TREASURE_ITEMS = {
-  beach: [
-    { name:'Sea Crystal', desc:'A translucent blue crystal shaped by tides', effect:'heal', value:20, rarity:'common' },
-    { name:'Pearl Fragment', desc:'Iridescent shard from a giant clam', effect:'atkBoost', value:5, rarity:'uncommon' },
-    { name:'Drift Amber', desc:'Ancient resin polished by centuries of surf', effect:'gold', value:30, rarity:'common' },
-    { name:'Coral Crown Shard', desc:'Fragment of a deep-sea crown, humming with power', effect:'heal', value:40, rarity:'rare' },
-  ],
-  forest: [
-    { name:'Verdant Root', desc:'Pulsing with green energy, warm to the touch', effect:'heal', value:25, rarity:'common' },
-    { name:'Ironbark Seed', desc:'Hard as stone, could grow into something mighty', effect:'defBoost', value:5, rarity:'uncommon' },
-    { name:'Hunter\'s Coin', desc:'Left by a traveler long ago', effect:'gold', value:25, rarity:'common' },
-    { name:'Sylvan Tear', desc:'A dewdrop that never evaporates', effect:'heal', value:45, rarity:'rare' },
-  ],
-  deepwoods: [
-    { name:'Shadow Moss', desc:'Grows only in total darkness. Strangely warm.', effect:'heal', value:30, rarity:'common' },
-    { name:'Witch\'s Eye', desc:'A perfectly round stone that seems to follow you', effect:'spdBoost', value:5, rarity:'uncommon' },
-    { name:'Cursed Doubloon', desc:'Gold coins from a forgotten age', effect:'gold', value:40, rarity:'uncommon' },
-    { name:'Heartwood Sap', desc:'The ancient forest\'s lifeblood', effect:'heal', value:50, rarity:'rare' },
-  ],
-  cave: [
-    { name:'Glowstone', desc:'Emits a steady blue luminescence', effect:'heal', value:25, rarity:'common' },
-    { name:'Geode Fragment', desc:'Sparkling with crystalline energy', effect:'atkBoost', value:6, rarity:'uncommon' },
-    { name:'Vein Gold', desc:'Raw gold threaded through quartz', effect:'gold', value:45, rarity:'uncommon' },
-    { name:'Dragon Scale', desc:'Impossibly hard, faintly warm. From what beast?', effect:'defBoost', value:8, rarity:'rare' },
-  ],
-};
-
-const NPC_ENCOUNTERS = {
-  beach: [
-    { name:'Old Fisherman', greeting:'Ahoy! Rest a moment, traveler.', offer:'trade',
-      trade:{ give:'Salted Rations', healAmount:30, cost:'Tell me what you\'ve seen' } },
-    { name:'Shell Collector', greeting:'Look what I found in the reef!', offer:'gift',
-      gift:{ name:'Lucky Shell', desc:'Feels warm', effect:'heal', value:15 } },
-  ],
-  forest: [
-    { name:'Wandering Herbalist', greeting:'You look weary. I have remedies.', offer:'heal',
-      healAmount:40 },
-    { name:'Lost Scout', greeting:'Thank the stars, another person!', offer:'info',
-      info:'There\'s a powerful creature deeper in. Be careful near the old stump.' },
-  ],
-  deepwoods: [
-    { name:'Masked Figure', greeting:'You\'ve come far. Most turn back by now.', offer:'trade',
-      trade:{ give:'Dark Tonic', healAmount:50, cost:'Your bravery speaks for itself' } },
-    { name:'Whispering Spirit', greeting:'...help me... remember...', offer:'lore',
-      lore:'This forest was once a city. Can you feel the stones beneath the roots?' },
-  ],
-  cave: [
-    { name:'Rogue Miner', greeting:'Watch your step. The deep tunnels shift.', offer:'info',
-      info:'The crystals here react to elemental attacks. Fire types thrive down here.' },
-    { name:'Blind Sage', greeting:'I see more than you think, child.', offer:'heal',
-      healAmount:35 },
-  ],
-};
-
-const HAZARD_EVENTS = {
-  beach: [
-    { name:'Rip Current', desc:'A sudden surge of water blocks the path!', damage:12, avoid:'You find footing on the rocks.' },
-    { name:'Quicksand', desc:'The sand gives way beneath you!', damage:15, avoid:'You scramble free just in time.' },
-  ],
-  forest: [
-    { name:'Poison Ivy Thicket', desc:'Thorny, toxic vines choke the trail.', damage:10, avoid:'You carefully pick your way around.' },
-    { name:'Falling Branch', desc:'A massive limb cracks overhead!', damage:18, avoid:'You dodge! It crashes behind you.' },
-  ],
-  deepwoods: [
-    { name:'Spore Cloud', desc:'Toxic mushrooms release a choking mist!', damage:20, avoid:'You hold your breath and push through.' },
-    { name:'Sinkholes', desc:'The ground is riddled with hidden drops.', damage:22, avoid:'You test each step carefully.' },
-  ],
-  cave: [
-    { name:'Cave-In!', desc:'Rocks tumble from the ceiling!', damage:20, avoid:'You sprint to safety!' },
-    { name:'Gas Vent', desc:'Noxious fumes hiss from a crack!', damage:15, avoid:'You find an air pocket and breathe.' },
-  ],
-};
-
-const LANDMARK_LORE = {
-  beach: [
-    { name:'Ancient Lighthouse', desc:'A crumbling tower overlooking the sea.',
-      lore:'Its light once guided ships from the old world. Who built it?' },
-    { name:'Carved Tidal Stone', desc:'Symbols etched into rock, worn by surf.',
-      lore:'The carvings depict monsters — guardians of the island, not threats.' },
-  ],
-  forest: [
-    { name:'Overgrown Shrine', desc:'Moss-covered stone altar in a clearing.',
-      lore:'Offerings still lie here. Someone — or something — tends this place.' },
-    { name:'Hollow Great Tree', desc:'A tree so vast you could live inside.',
-      lore:'Claw marks inside. A monster raised its young here once.' },
-  ],
-  deepwoods: [
-    { name:'Ruined Observatory', desc:'Shattered lenses and broken gears overgrown with vines.',
-      lore:'They watched the stars here. A map on the wall shows islands you don\'t recognize.' },
-    { name:'Bone Arch', desc:'An archway made of enormous, fossilized bones.',
-      lore:'Whatever this creature was, it dwarfed anything alive today.' },
-  ],
-  cave: [
-    { name:'Underground Lake', desc:'A still, black mirror of water stretching into darkness.',
-      lore:'Something moves beneath the surface. You hear singing — impossibly deep.' },
-    { name:'Crystal Chamber', desc:'Thousands of crystals reflect your light infinitely.',
-      lore:'Each crystal hums a different note. Together they form a melody.' },
-  ],
-};
-
-const FORK_OPTIONS = {
-  beach: [
-    { a:{ label:'Rocky Shore', desc:'Dangerous but treasures wash up here', risk:'hazard', reward:'treasure' },
-      b:{ label:'Sandy Path', desc:'Safe and calm', risk:'path', reward:'path' } },
-    { a:{ label:'Tidal Cave', desc:'Dark and narrow, monsters lurk within', risk:'monster', reward:'treasure' },
-      b:{ label:'Cliff Trail', desc:'High ground, good view ahead', risk:'path', reward:'landmark' } },
-  ],
-  forest: [
-    { a:{ label:'Dense Thicket', desc:'Hard to navigate, but something glows inside', risk:'hazard', reward:'treasure' },
-      b:{ label:'Deer Trail', desc:'A well-worn animal path', risk:'monster', reward:'campfire' } },
-    { a:{ label:'River Crossing', desc:'Fast current, but the other side looks promising', risk:'hazard', reward:'npc' },
-      b:{ label:'Follow the Stream', desc:'Longer but safer', risk:'path', reward:'path' } },
-  ],
-  deepwoods: [
-    { a:{ label:'Into the Mist', desc:'You can barely see. Anything could be in there.', risk:'monster', reward:'treasure' },
-      b:{ label:'Follow the Fungi', desc:'Glowing mushrooms light a winding way', risk:'path', reward:'landmark' } },
-    { a:{ label:'Descend the Ravine', desc:'Steep and treacherous', risk:'hazard', reward:'treasure' },
-      b:{ label:'Skirt the Edge', desc:'Takes longer but keeps solid ground', risk:'monster', reward:'campfire' } },
-  ],
-  cave: [
-    { a:{ label:'Narrow Squeeze', desc:'Tight passage — no room to fight', risk:'hazard', reward:'treasure' },
-      b:{ label:'Main Tunnel', desc:'Wider but you hear something ahead', risk:'monster', reward:'path' } },
-    { a:{ label:'Follow the Draft', desc:'Fresh air — might lead somewhere', risk:'path', reward:'npc' },
-      b:{ label:'Crystal Passage', desc:'Beautiful but unstable', risk:'hazard', reward:'landmark' } },
-  ],
-};
 
 function weightedPick(events) {
-  const total = events.reduce((s, e) => s + e.weight, 0);
+  const total = events.reduce((s, e) => s + e.w, 0);
   let r = Math.random() * total;
-  for (const e of events) {
-    r -= e.weight;
-    if (r <= 0) return e.type;
-  }
-  return events[0].type;
+  for (const e of events) { r -= e.w; if (r <= 0) return e.t; }
+  return events[0].t;
 }
 
 function generateExpedition(zone) {
-  const length = rng(7, 10);
+  const count = rng(7, 10);
   const nodes = [];
   let lastType = '';
-
-  for (let i = 0; i < length; i++) {
+  for (let i = 0; i < count; i++) {
+    const worldX = i * NODE_SPACING;
     if (i === 0) {
-      nodes.push({ type:'start' });
-    } else if (i === length - 1) {
-      nodes.push({ type:'boss', zone });
+      nodes.push({ worldX, type:'start', visited:false });
+    } else if (i === count - 1) {
+      nodes.push({ worldX, type:'boss', visited:false, data:generateBoss(zone) });
     } else {
       let type;
-      // Avoid consecutive same types
-      do { type = weightedPick(EXPEDITION_EVENTS[zone]); } while (type === lastType && type !== 'path');
-      // Guarantee a campfire before boss
-      if (i === length - 2 && !nodes.some(n => n.type === 'campfire')) type = 'campfire';
-      // Guarantee at least one fork
-      if (i === Math.floor(length / 2) && !nodes.some(n => n.type === 'fork')) type = 'fork';
-      nodes.push({ type, zone });
+      do { type = weightedPick(EVENT_WEIGHTS[zone]); } while (type === lastType);
+      const node = { worldX, type, visited:false };
+      // Pre-generate data for nodes
+      if (type === 'monster') node.data = generateEnemy();
+      if (type === 'treasure') node.data = pick(ITEMS[zone]);
+      if (type === 'campfire') node.healAmt = Math.floor(95 * 0.4);
+      if (type === 'landmark') node.loreIdx = rng(0, 3);
       lastType = type;
+      nodes.push(node);
     }
   }
   return nodes;
-}
-
-function startExpedition() {
-  if (gameState !== 'explore') return;
-  expedition = generateExpedition(currentZone);
-  expStep = 0;
-  expScrollX = 0;
-  expStats = { battles: 0, loot: [], healed: 0, lore: 0, gold: 0 };
-  gameState = 'expedition';
-
-  // Hide explore UI, show expedition UI
-  document.getElementById('exploreUI').style.display = 'none';
-  document.getElementById('zones').style.display = 'none';
-  document.getElementById('expeditionUI').classList.add('active');
-
-  presentNode();
-}
-
-function updateExpProgress() {
-  const pct = ((expStep + 1) / expedition.length * 100).toFixed(0);
-  document.getElementById('expStepLabel').textContent = `Step ${expStep + 1}/${expedition.length}`;
-  document.getElementById('expProgressBar').style.width = pct + '%';
-}
-
-function presentNode() {
-  if (!expedition || expStep >= expedition.length) { endExpedition(); return; }
-  updateExpProgress();
-  const node = expedition[expStep];
-  const zone = currentZone;
-  const narrative = document.getElementById('narrativeBox');
-  const choices = document.getElementById('choicesWrap');
-  choices.innerHTML = '';
-
-  // Update parallax offset for scene variety
-  expScrollX = expStep * 60;
-
-  switch (node.type) {
-    case 'start': {
-      const zoneLabel = { beach:'Beach', forest:'Forest', deepwoods:'Deep Woods', cave:'Cave' }[zone];
-      narrative.innerHTML = `<div class="event-title">Setting Out</div>
-        <div class="event-desc">You venture into the ${zoneLabel} of Verdantia. Who knows what lies ahead...</div>`;
-      expNodeObject = { type:'signpost' };
-      addChoice('Onward', 'primary', () => advanceNode());
-      break;
-    }
-    case 'path': {
-      const text = pick(PATH_NARRATIVES[zone]);
-      narrative.innerHTML = `<div class="event-desc">${text}</div>`;
-      expNodeObject = null;
-      addChoice('Continue', 'primary', () => advanceNode());
-      break;
-    }
-    case 'monster': {
-      enemyMonster = generateEnemy();
-      narrative.innerHTML = `<div class="event-title">Wild Encounter!</div>
-        <div class="event-desc">A wild <strong>${enemyMonster.name}</strong> (Lv${enemyMonster.level}) blocks the path!</div>`;
-      expNodeObject = { type:'monster', data:enemyMonster };
-      addChoice('Fight', 'primary', () => {
-        expStats.battles++;
-        triggerEncounterFromExpedition();
-      });
-      if (playerMonster.stats.spd > 40) {
-        addChoice('Sneak Past', 'secondary', () => {
-          if (Math.random() < 0.6) {
-            narrative.innerHTML += `<div class="event-desc" style="margin-top:6px">You slip past unnoticed!</div>`;
-            choices.innerHTML = '';
-            addChoice('Continue', 'primary', () => { enemyMonster = null; advanceNode(); });
-          } else {
-            narrative.innerHTML += `<div class="danger-line">It spotted you! No choice but to fight!</div>`;
-            choices.innerHTML = '';
-            setTimeout(() => {
-              expStats.battles++;
-              triggerEncounterFromExpedition();
-            }, 600);
-          }
-        });
-      }
-      break;
-    }
-    case 'treasure': {
-      const item = pick(TREASURE_ITEMS[zone]);
-      narrative.innerHTML = `<div class="event-title">Treasure Found!</div>
-        <div class="event-desc">${item.desc}</div>`;
-      expNodeObject = { type:'chest' };
-      addChoice('Take It', 'gold', () => {
-        expStats.loot.push(item);
-        let effectText = '';
-        if (item.effect === 'heal') {
-          playerMonster.currentHP = Math.min(playerMonster.stats.hp, playerMonster.currentHP + item.value);
-          effectText = `<div class="heal-line">+${item.value} HP restored!</div>`;
-          expStats.healed += item.value;
-        } else if (item.effect === 'gold') {
-          expStats.gold += item.value;
-          effectText = `<div class="loot-line">+${item.value} Gold!</div>`;
-        } else if (item.effect === 'atkBoost') {
-          effectText = `<div class="loot-line">+${item.value} ATK for this expedition!</div>`;
-          playerMonster.stats.atk += item.value;
-        } else if (item.effect === 'defBoost') {
-          effectText = `<div class="loot-line">+${item.value} DEF for this expedition!</div>`;
-          playerMonster.stats.def += item.value;
-        } else if (item.effect === 'spdBoost') {
-          effectText = `<div class="loot-line">+${item.value} SPD for this expedition!</div>`;
-          playerMonster.stats.spd += item.value;
-        }
-        narrative.innerHTML = `<div class="event-title">${item.name}</div>
-          <div class="event-desc">${item.desc}</div>${effectText}`;
-        choices.innerHTML = '';
-        expNodeObject = { type:'chestOpen' };
-        addChoice('Continue', 'primary', () => advanceNode());
-      });
-      addChoice('Leave It', 'secondary', () => advanceNode());
-      break;
-    }
-    case 'campfire': {
-      const healAmt = Math.floor(playerMonster.stats.hp * 0.4);
-      narrative.innerHTML = `<div class="event-title">Campfire</div>
-        <div class="event-desc">A sheltered clearing with the remains of a fire. You could rest here.</div>`;
-      expNodeObject = { type:'campfire' };
-      addChoice(`Rest (+${healAmt} HP)`, 'green', () => {
-        playerMonster.currentHP = Math.min(playerMonster.stats.hp, playerMonster.currentHP + healAmt);
-        expStats.healed += healAmt;
-        narrative.innerHTML = `<div class="event-title">Rested</div>
-          <div class="heal-line">You rest by the fire. +${healAmt} HP restored.</div>
-          <div class="event-desc">HP: ${playerMonster.currentHP}/${playerMonster.stats.hp}</div>`;
-        choices.innerHTML = '';
-        addChoice('Continue', 'primary', () => advanceNode());
-      });
-      addChoice('Skip', 'secondary', () => advanceNode());
-      break;
-    }
-    case 'npc': {
-      const npc = pick(NPC_ENCOUNTERS[zone]);
-      narrative.innerHTML = `<div class="event-title">${npc.name}</div>
-        <div class="event-desc">"${npc.greeting}"</div>`;
-      expNodeObject = { type:'npc', name:npc.name };
-
-      if (npc.offer === 'heal') {
-        addChoice(`Accept Healing (+${npc.healAmount} HP)`, 'green', () => {
-          playerMonster.currentHP = Math.min(playerMonster.stats.hp, playerMonster.currentHP + npc.healAmount);
-          expStats.healed += npc.healAmount;
-          narrative.innerHTML += `<div class="heal-line">+${npc.healAmount} HP restored!</div>`;
-          choices.innerHTML = '';
-          addChoice('Thank them & continue', 'primary', () => advanceNode());
-        });
-      } else if (npc.offer === 'gift') {
-        addChoice('Accept Gift', 'gold', () => {
-          expStats.loot.push(npc.gift);
-          if (npc.gift.effect === 'heal') {
-            playerMonster.currentHP = Math.min(playerMonster.stats.hp, playerMonster.currentHP + npc.gift.value);
-            expStats.healed += npc.gift.value;
-          }
-          narrative.innerHTML += `<div class="loot-line">Received: ${npc.gift.name}!</div>`;
-          choices.innerHTML = '';
-          addChoice('Continue', 'primary', () => advanceNode());
-        });
-      } else if (npc.offer === 'trade') {
-        addChoice(`Accept: ${npc.trade.give}`, 'gold', () => {
-          playerMonster.currentHP = Math.min(playerMonster.stats.hp, playerMonster.currentHP + npc.trade.healAmount);
-          expStats.healed += npc.trade.healAmount;
-          narrative.innerHTML += `<div class="heal-line">+${npc.trade.healAmount} HP from ${npc.trade.give}!</div>`;
-          choices.innerHTML = '';
-          addChoice('Continue', 'primary', () => advanceNode());
-        });
-      } else if (npc.offer === 'info') {
-        narrative.innerHTML += `<div class="lore-line">"${npc.info}"</div>`;
-        addChoice('Continue', 'primary', () => advanceNode());
-      } else if (npc.offer === 'lore') {
-        narrative.innerHTML += `<div class="lore-line">"${npc.lore}"</div>`;
-        expStats.lore++;
-        addChoice('Continue', 'primary', () => advanceNode());
-      }
-      addChoice('Walk Away', 'secondary', () => advanceNode());
-      break;
-    }
-    case 'hazard': {
-      const haz = pick(HAZARD_EVENTS[zone]);
-      narrative.innerHTML = `<div class="event-title">${haz.name}</div>
-        <div class="event-desc">${haz.desc}</div>`;
-      expNodeObject = { type:'hazard' };
-      addChoice('Push Through', 'primary', () => {
-        if (Math.random() < 0.5) {
-          playerMonster.currentHP = Math.max(1, playerMonster.currentHP - haz.damage);
-          narrative.innerHTML = `<div class="event-title">${haz.name}</div>
-            <div class="danger-line">You take ${haz.damage} damage pushing through!</div>
-            <div class="event-desc">HP: ${playerMonster.currentHP}/${playerMonster.stats.hp}</div>`;
-        } else {
-          narrative.innerHTML = `<div class="event-title">${haz.name}</div>
-            <div class="event-desc">${haz.avoid}</div>`;
-        }
-        choices.innerHTML = '';
-        addChoice('Continue', 'primary', () => advanceNode());
-      });
-      addChoice('Go Around (slower)', 'secondary', () => {
-        narrative.innerHTML = `<div class="event-desc">You take a longer route around the danger...</div>`;
-        choices.innerHTML = '';
-        addChoice('Continue', 'primary', () => advanceNode());
-      });
-      break;
-    }
-    case 'landmark': {
-      const lm = pick(LANDMARK_LORE[zone]);
-      narrative.innerHTML = `<div class="event-title">${lm.name}</div>
-        <div class="event-desc">${lm.desc}</div>
-        <div class="lore-line">${lm.lore}</div>`;
-      expNodeObject = { type:'landmark' };
-      expStats.lore++;
-      addChoice('Continue', 'primary', () => advanceNode());
-      break;
-    }
-    case 'fork': {
-      const fork = pick(FORK_OPTIONS[zone]);
-      narrative.innerHTML = `<div class="event-title">Fork in the Path</div>
-        <div class="event-desc">The trail splits in two. Which way?</div>`;
-      expNodeObject = { type:'signpost' };
-      addChoice(fork.a.label, 'primary', () => {
-        // Insert the risk+reward nodes after current step
-        expedition.splice(expStep + 1, 0, { type:fork.a.risk, zone }, { type:fork.a.reward, zone });
-        narrative.innerHTML = `<div class="event-desc">You take the ${fork.a.label}. ${fork.a.desc}.</div>`;
-        choices.innerHTML = '';
-        addChoice('Continue', 'primary', () => advanceNode());
-      }, fork.a.desc);
-      addChoice(fork.b.label, 'blue', () => {
-        expedition.splice(expStep + 1, 0, { type:fork.b.risk, zone }, { type:fork.b.reward, zone });
-        narrative.innerHTML = `<div class="event-desc">You take the ${fork.b.label}. ${fork.b.desc}.</div>`;
-        choices.innerHTML = '';
-        addChoice('Continue', 'primary', () => advanceNode());
-      }, fork.b.desc);
-      break;
-    }
-    case 'boss': {
-      enemyMonster = generateBoss(zone);
-      narrative.innerHTML = `<div class="event-title" style="color:var(--accent)">Boss Encounter!</div>
-        <div class="event-desc">A massive <strong>${enemyMonster.name}</strong> (Lv${enemyMonster.level}) guards the way! There's no sneaking past this one.</div>`;
-      expNodeObject = { type:'monster', data:enemyMonster, boss:true };
-      addChoice('Fight!', 'primary', () => {
-        expStats.battles++;
-        triggerEncounterFromExpedition();
-      });
-      break;
-    }
-  }
-}
-
-function addChoice(label, style, handler, sub) {
-  const btn = document.createElement('button');
-  btn.className = 'choice-btn ' + style;
-  btn.innerHTML = label + (sub ? `<span class="choice-sub">${sub}</span>` : '');
-  btn.addEventListener('click', handler);
-  btn.addEventListener('touchend', e => { e.preventDefault(); handler(); });
-  document.getElementById('choicesWrap').appendChild(btn);
-}
-
-function advanceNode() {
-  expStep++;
-  if (expStep >= expedition.length) {
-    endExpedition();
-    return;
-  }
-  // Walking animation
-  expWalking = true;
-  expWalkT = 0;
-  document.getElementById('choicesWrap').innerHTML = '';
-  document.getElementById('narrativeBox').innerHTML = '<div class="event-desc">Walking...</div>';
-  expNodeObject = null;
-}
-
-function triggerEncounterFromExpedition() {
-  // Flash + shake then start battle
-  const flash = document.getElementById('flash');
-  flash.classList.add('active');
-  setTimeout(() => flash.classList.remove('active'), 150);
-  sceneCanvas.parentElement.classList.add('shake');
-  setTimeout(() => sceneCanvas.parentElement.classList.remove('shake'), 300);
-
-  document.getElementById('expeditionUI').classList.remove('active');
-  setTimeout(() => startBattle(), 500);
 }
 
 function generateBoss(zone) {
@@ -1025,30 +566,272 @@ function generateBoss(zone) {
   boss.body.size = (boss.body?.size || 1) * 1.3;
   boss.body.bulk = (boss.body?.bulk || 1) * 1.2;
   boss.moves.forEach(m => m.damage = Math.floor(m.damage * 1.3));
-  // Boss names
-  const bossNames = {
-    beach:['Tidecrusher','Reefmaw','Stormcaller','Wavejaw'],
-    forest:['Thornking','Rootwarden','Mossfang','Canopyclaw'],
-    deepwoods:['Gloomfang','Mistwalker','Rotcrown','Nightthorn'],
-    cave:['Deepjaw','Crystalrend','Magmaclaw','Cavewyrm'],
-  };
-  boss.name = pick(bossNames[zone] || bossNames.forest);
+  const names = {beach:['Tidecrusher','Reefmaw','Stormcaller'],forest:['Thornking','Rootwarden','Mossfang'],
+    deepwoods:['Gloomfang','Mistwalker','Rotcrown'],cave:['Deepjaw','Crystalrend','Cavewyrm']};
+  boss.name = pick(names[zone] || names.forest);
   return boss;
+}
+
+function startExpedition() {
+  if (gameState !== 'explore') return;
+  expNodes = generateExpedition(currentZone);
+  expPlayerX = -30;
+  expCameraX = 0;
+  expMoving = false;
+  expStopped = false;
+  expCurrentNode = null;
+  expNodeIndex = 0;
+  expStats = { battles:0, loot:[], healed:0, lore:0, gold:0 };
+  gameState = 'expedition';
+
+  document.getElementById('exploreUI').style.display = 'none';
+  document.getElementById('zones').style.display = 'none';
+  document.getElementById('expeditionUI').classList.add('active');
+  updateExpUI();
+  showWalkPrompt();
+
+  // Tap canvas to walk
+  sceneCanvas.addEventListener('click', expTapHandler);
+  sceneCanvas.addEventListener('touchend', expTapHandler);
+}
+
+function expTapHandler(e) {
+  e.preventDefault();
+  if (gameState !== 'expedition') return;
+  if (expStopped) return; // at a node, handle via buttons
+  expMoving = true;
+  hideWalkPrompt();
+}
+
+function updateExpUI() {
+  const pct = Math.min(100, (expPlayerX / ((expNodes.length - 1) * NODE_SPACING)) * 100).toFixed(0);
+  document.getElementById('expStepLabel').textContent = `${Math.min(expNodeIndex + 1, expNodes.length)}/${expNodes.length}`;
+  document.getElementById('expProgressBar').style.width = pct + '%';
+  document.getElementById('expHPMini').textContent = `${playerMonster.currentHP}/${playerMonster.stats.hp}`;
+  document.getElementById('expHPMini').style.color =
+    playerMonster.currentHP > playerMonster.stats.hp * 0.5 ? 'var(--hp-green)' :
+    playerMonster.currentHP > playerMonster.stats.hp * 0.2 ? 'var(--hp-yellow)' : 'var(--hp-red)';
+}
+
+function showWalkPrompt() {
+  document.getElementById('expWalkPrompt').style.display = '';
+  document.getElementById('expEventBar').classList.remove('active');
+}
+
+function hideWalkPrompt() {
+  document.getElementById('expWalkPrompt').style.display = 'none';
+}
+
+function showEventUI(title, sub, choices) {
+  hideWalkPrompt();
+  const bar = document.getElementById('expEventBar');
+  document.getElementById('expEventText').textContent = title;
+  document.getElementById('expEventSub').textContent = sub || '';
+  const wrap = document.getElementById('expChoices');
+  wrap.innerHTML = '';
+  choices.forEach(c => {
+    const btn = document.createElement('button');
+    btn.className = 'exp-btn ' + (c.style || 'walk');
+    btn.textContent = c.label;
+    btn.addEventListener('click', c.action);
+    btn.addEventListener('touchend', e => { e.preventDefault(); c.action(); });
+    wrap.appendChild(btn);
+  });
+  bar.classList.add('active');
+}
+
+function showToast(text) {
+  const t = document.getElementById('expToast');
+  t.textContent = text;
+  t.classList.add('show');
+  clearTimeout(expToastTimer);
+  expToastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function handleNodeArrival(node) {
+  expStopped = true;
+  expMoving = false;
+  node.visited = true;
+  updateExpUI();
+
+  switch (node.type) {
+    case 'start':
+      showToast('Expedition started!');
+      expStopped = false;
+      showWalkPrompt();
+      break;
+
+    case 'monster':
+      showEventUI('Wild ' + node.data.name + '!', 'Lv' + node.data.level + ' blocks the path', [
+        { label:'Fight', style:'fight', action:() => {
+          enemyMonster = node.data;
+          expStats.battles++;
+          const flash = document.getElementById('flash');
+          flash.classList.add('active');
+          setTimeout(() => flash.classList.remove('active'), 150);
+          document.getElementById('expeditionUI').classList.remove('active');
+          setTimeout(() => startBattle(), 400);
+        }},
+        { label:'Sneak', style:'info', action:() => {
+          if (Math.random() < 0.55) {
+            showToast('Slipped past unnoticed!');
+            resumeWalking();
+          } else {
+            showToast('Spotted! No choice but to fight!');
+            setTimeout(() => {
+              enemyMonster = node.data;
+              expStats.battles++;
+              document.getElementById('expeditionUI').classList.remove('active');
+              startBattle();
+            }, 500);
+          }
+        }},
+      ]);
+      break;
+
+    case 'treasure': {
+      const item = node.data;
+      showEventUI('Treasure found!', item.name, [
+        { label:'Take', style:'loot', action:() => {
+          expStats.loot.push(item);
+          if (item.effect === 'heal') {
+            playerMonster.currentHP = Math.min(playerMonster.stats.hp, playerMonster.currentHP + item.value);
+            expStats.healed += item.value;
+            showToast(item.name + ' +' + item.value + ' HP');
+          } else {
+            expStats.gold += item.value;
+            showToast(item.name + ' +' + item.value + ' Gold');
+          }
+          node.opened = true;
+          updateExpUI();
+          resumeWalking();
+        }},
+        { label:'Leave', style:'walk', action:() => resumeWalking() },
+      ]);
+      break;
+    }
+
+    case 'campfire':
+      showEventUI('Campfire', 'Rest and recover?', [
+        { label:'Rest', style:'heal', action:() => {
+          const heal = Math.floor(playerMonster.stats.hp * 0.4);
+          playerMonster.currentHP = Math.min(playerMonster.stats.hp, playerMonster.currentHP + heal);
+          expStats.healed += heal;
+          showToast('+' + heal + ' HP restored');
+          updateExpUI();
+          resumeWalking();
+        }},
+        { label:'Skip', style:'walk', action:() => resumeWalking() },
+      ]);
+      break;
+
+    case 'npc':
+      showEventUI('Wandering Traveler', '"Rest a moment, friend."', [
+        { label:'Accept aid', style:'heal', action:() => {
+          const heal = rng(15, 35);
+          playerMonster.currentHP = Math.min(playerMonster.stats.hp, playerMonster.currentHP + heal);
+          expStats.healed += heal;
+          showToast('+' + heal + ' HP');
+          updateExpUI();
+          resumeWalking();
+        }},
+        { label:'Move on', style:'walk', action:() => resumeWalking() },
+      ]);
+      break;
+
+    case 'hazard':
+      showEventUI('Danger!', 'The path ahead looks treacherous', [
+        { label:'Push through', style:'fight', action:() => {
+          if (Math.random() < 0.5) {
+            const dmg = rng(10, 22);
+            playerMonster.currentHP = Math.max(1, playerMonster.currentHP - dmg);
+            showToast('-' + dmg + ' HP!');
+          } else {
+            showToast('Made it through safely!');
+          }
+          updateExpUI();
+          resumeWalking();
+        }},
+        { label:'Go around', style:'walk', action:() => {
+          showToast('Took the long way around...');
+          resumeWalking();
+        }},
+      ]);
+      break;
+
+    case 'landmark':
+      expStats.lore++;
+      showToast('Ancient ruins discovered...');
+      showEventUI('Ancient Ruins', 'Strange markings cover the stone', [
+        { label:'Continue', style:'walk', action:() => resumeWalking() },
+      ]);
+      break;
+
+    case 'boss':
+      showEventUI(node.data.name, 'Lv' + node.data.level + ' BOSS', [
+        { label:'Fight!', style:'fight', action:() => {
+          enemyMonster = node.data;
+          expStats.battles++;
+          const flash = document.getElementById('flash');
+          flash.classList.add('active');
+          setTimeout(() => flash.classList.remove('active'), 150);
+          document.getElementById('expeditionUI').classList.remove('active');
+          setTimeout(() => startBattle(), 400);
+        }},
+      ]);
+      break;
+  }
+}
+
+function resumeWalking() {
+  expStopped = false;
+  expNodeIndex++;
+  if (expNodeIndex >= expNodes.length) {
+    endExpedition();
+    return;
+  }
+  showWalkPrompt();
+}
+
+function updateExpedition() {
+  if (!expMoving) return;
+
+  expPlayerX += WALK_SPEED;
+
+  // Camera follows player (player stays at ~30% of screen in world coords mapped to pixels)
+  const targetCam = Math.max(0, expPlayerX - W * 0.3 * (NODE_SPACING / W));
+  expCameraX += (targetCam - expCameraX) * 0.08;
+
+  // Check if we reached the next node
+  if (expNodeIndex < expNodes.length) {
+    const nextNode = expNodes[expNodeIndex];
+    if (expPlayerX >= nextNode.worldX) {
+      expPlayerX = nextNode.worldX;
+      handleNodeArrival(nextNode);
+    }
+  }
+
+  // Past last node = end
+  if (expNodeIndex >= expNodes.length) {
+    endExpedition();
+  }
+
+  updateExpUI();
 }
 
 function endExpedition() {
   gameState = 'explore';
-  expedition = null;
+  sceneCanvas.removeEventListener('click', expTapHandler);
+  sceneCanvas.removeEventListener('touchend', expTapHandler);
+  expMoving = false;
 
-  // Show summary
   const content = document.getElementById('summaryContent');
   content.innerHTML = `
-    <div class="summary-line">Battles fought: <span>${expStats.battles}</span></div>
-    <div class="summary-line">Items found: <span>${expStats.loot.length}</span></div>
-    <div class="summary-line">Gold earned: <span>${expStats.gold}</span></div>
+    <div class="summary-line">Battles: <span>${expStats.battles}</span></div>
+    <div class="summary-line">Items: <span>${expStats.loot.length}</span></div>
+    <div class="summary-line">Gold: <span>${expStats.gold}</span></div>
     <div class="summary-line">HP restored: <span>${expStats.healed}</span></div>
-    <div class="summary-line">Lore discovered: <span>${expStats.lore}</span></div>
-    ${expStats.loot.map(l => `<div class="summary-line" style="color:var(--gold);font-size:11px">  ${l.name}</div>`).join('')}
+    <div class="summary-line">Lore: <span>${expStats.lore}</span></div>
   `;
   document.getElementById('expeditionUI').classList.remove('active');
   document.getElementById('expSummary').classList.add('active');
@@ -1058,210 +841,107 @@ function dismissSummary() {
   document.getElementById('expSummary').classList.remove('active');
   document.getElementById('exploreUI').style.display = '';
   document.getElementById('zones').style.display = '';
-  document.getElementById('exploreBtn').classList.remove('walking');
   document.getElementById('exploreBtn').innerHTML = '<span class="shimmer"></span>Set Out';
-  document.getElementById('exploreStatus').textContent = '';
-  expNodeObject = null;
-  expScrollX = 0;
+  expNodes = [];
+  expPlayerX = 0;
+  expCameraX = 0;
   playerMonster.currentHP = playerMonster.stats.hp;
 }
 
-function abandonExpedition() {
-  if (confirm('Abandon expedition? You\'ll keep items found so far.')) {
-    endExpedition();
-  }
-}
-
-// ---- CANVAS DRAWING FOR EXPEDITION OBJECTS ----
-function drawExpeditionObject(groundY) {
-  if (!expNodeObject) return;
-
-  const ox = W * 0.65;
+// ---- DRAW EXPEDITION OBJECTS ON CANVAS ----
+function drawExpNode(node, screenX, groundY) {
   const oy = groundY - 5;
+  if (screenX < -60 || screenX > W + 60) return; // off screen
 
-  switch (expNodeObject.type) {
-    case 'chest':
-    case 'chestOpen': {
-      const open = expNodeObject.type === 'chestOpen';
-      // chest body
-      ctx.fillStyle = '#8B6914';
-      ctx.strokeStyle = '#5a4510';
-      ctx.lineWidth = 2;
+  switch (node.type) {
+    case 'treasure': {
+      const opened = node.opened;
+      ctx.fillStyle = '#8B6914'; ctx.strokeStyle = '#5a4510'; ctx.lineWidth = 2;
       const cw = 28, ch = 20;
-      ctx.beginPath();
-      ctx.roundRect(ox - cw/2, oy - ch, cw, ch, 3);
-      ctx.fill(); ctx.stroke();
-      // lid
+      ctx.beginPath(); ctx.roundRect(screenX - cw/2, oy - ch, cw, ch, 3); ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#a07818';
-      if (open) {
-        ctx.save();
-        ctx.translate(ox - cw/2, oy - ch);
-        ctx.rotate(-0.5);
-        ctx.fillRect(0, -6, cw, 6);
-        ctx.strokeRect(0, -6, cw, 6);
-        ctx.restore();
-        // glow from inside
-        ctx.save();
-        ctx.globalAlpha = 0.4 + Math.sin(animT * 0.08) * 0.15;
-        const glow = ctx.createRadialGradient(ox, oy - ch, 0, ox, oy - ch, 25);
-        glow.addColorStop(0, '#ffdd44');
-        glow.addColorStop(1, 'transparent');
-        ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.arc(ox, oy - ch, 25, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
+      if (opened) {
+        ctx.save(); ctx.translate(screenX - cw/2, oy - ch); ctx.rotate(-0.5);
+        ctx.fillRect(0, -6, cw, 6); ctx.strokeRect(0, -6, cw, 6); ctx.restore();
+        ctx.save(); ctx.globalAlpha = 0.3 + Math.sin(animT * 0.08) * 0.15;
+        const g = ctx.createRadialGradient(screenX, oy - ch, 0, screenX, oy - ch, 20);
+        g.addColorStop(0, '#ffdd44'); g.addColorStop(1, 'transparent');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(screenX, oy - ch, 20, 0, Math.PI*2); ctx.fill(); ctx.restore();
       } else {
-        ctx.fillRect(ox - cw/2, oy - ch - 6, cw, 6);
-        ctx.strokeRect(ox - cw/2, oy - ch - 6, cw, 6);
+        ctx.fillRect(screenX - cw/2, oy - ch - 6, cw, 6); ctx.strokeRect(screenX - cw/2, oy - ch - 6, cw, 6);
       }
-      // clasp
-      ctx.fillStyle = '#daa520';
-      ctx.beginPath(); ctx.arc(ox, oy - ch, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#daa520'; ctx.beginPath(); ctx.arc(screenX, oy - ch, 3, 0, Math.PI*2); ctx.fill();
       break;
     }
     case 'campfire': {
-      // stones
       ctx.fillStyle = '#444';
       for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.arc(ox + Math.cos(a) * 12, oy + Math.sin(a) * 5, 4, 0, Math.PI * 2);
-        ctx.fill();
+        const a = (i/6)*Math.PI*2;
+        ctx.beginPath(); ctx.arc(screenX+Math.cos(a)*12, oy+Math.sin(a)*5, 4, 0, Math.PI*2); ctx.fill();
       }
-      // flames
       for (let i = 0; i < 4; i++) {
-        const fx = ox + (Math.random() - 0.5) * 10;
-        const fh = 12 + Math.sin(animT * 0.1 + i * 2) * 6;
-        ctx.fillStyle = i % 2 ? '#ff6600' : '#ffcc00';
-        ctx.globalAlpha = 0.7 + Math.sin(animT * 0.15 + i) * 0.2;
+        const fx = screenX + (i-1.5)*4;
+        const fh = 12 + Math.sin(animT*0.1+i*2)*6;
+        ctx.fillStyle = i%2?'#ff6600':'#ffcc00'; ctx.globalAlpha = 0.7+Math.sin(animT*0.15+i)*0.2;
         ctx.beginPath();
-        ctx.moveTo(fx, oy - 3);
-        ctx.quadraticCurveTo(fx + 5, oy - 3 - fh * 0.5, fx + 2, oy - 3 - fh);
-        ctx.quadraticCurveTo(fx - 3, oy - 3 - fh * 0.6, fx, oy - 3);
+        ctx.moveTo(fx, oy-3);
+        ctx.quadraticCurveTo(fx+5, oy-3-fh*0.5, fx+2, oy-3-fh);
+        ctx.quadraticCurveTo(fx-3, oy-3-fh*0.6, fx, oy-3);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
-      // glow
-      ctx.save();
-      ctx.globalAlpha = 0.15 + Math.sin(animT * 0.06) * 0.05;
-      const fg = ctx.createRadialGradient(ox, oy - 8, 0, ox, oy - 8, 40);
-      fg.addColorStop(0, '#ff8800');
-      fg.addColorStop(1, 'transparent');
-      ctx.fillStyle = fg;
-      ctx.beginPath(); ctx.arc(ox, oy - 8, 40, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.12;
+      const fg = ctx.createRadialGradient(screenX, oy-8, 0, screenX, oy-8, 35);
+      fg.addColorStop(0,'#ff8800'); fg.addColorStop(1,'transparent');
+      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(screenX, oy-8, 35, 0, Math.PI*2); ctx.fill(); ctx.restore();
       break;
     }
     case 'npc': {
-      // Simple humanoid figure
-      const nx = ox, ny = oy - 18;
-      ctx.save();
-      ctx.translate(nx, ny);
-      // shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
-      ctx.beginPath(); ctx.ellipse(0, 18, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
-      // body
-      ctx.fillStyle = '#556688';
-      ctx.beginPath(); ctx.ellipse(0, 0, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
-      // head
-      ctx.fillStyle = '#d4b896';
-      ctx.beginPath(); ctx.arc(0, -12, 6, 0, Math.PI * 2); ctx.fill();
-      // hat/hood
-      ctx.fillStyle = '#3a5a3a';
-      ctx.beginPath();
-      ctx.moveTo(-8, -12); ctx.lineTo(0, -22); ctx.lineTo(8, -12);
-      ctx.closePath(); ctx.fill();
-      // arms
-      ctx.strokeStyle = '#556688'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-      const armWave = Math.sin(animT * 0.05) * 0.2;
-      ctx.beginPath(); ctx.moveTo(-7, -2); ctx.lineTo(-14, 6 + Math.sin(animT * 0.08) * 3); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(7, -2); ctx.lineTo(14, 4); ctx.stroke();
+      ctx.save(); ctx.translate(screenX, oy-18);
+      ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0,18,10,4,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#556688'; ctx.beginPath(); ctx.ellipse(0,0,7,9,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#d4b896'; ctx.beginPath(); ctx.arc(0,-12,6,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#3a5a3a'; ctx.beginPath();
+      ctx.moveTo(-8,-12); ctx.lineTo(0,-22); ctx.lineTo(8,-12); ctx.closePath(); ctx.fill();
       ctx.restore();
       break;
     }
     case 'hazard': {
-      // Warning triangle
-      ctx.save();
-      ctx.translate(ox, oy - 20);
-      ctx.fillStyle = '#cc3300';
-      ctx.strokeStyle = '#ffcc00';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, -15); ctx.lineTo(15, 12); ctx.lineTo(-15, 12);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#ffcc00';
-      ctx.font = 'bold 16px serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('!', 0, 8);
+      ctx.save(); ctx.translate(screenX, oy-20);
+      ctx.fillStyle='#cc3300'; ctx.strokeStyle='#ffcc00'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(15,12); ctx.lineTo(-15,12); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#ffcc00'; ctx.font='bold 16px serif'; ctx.textAlign='center'; ctx.fillText('!',0,8);
       ctx.restore();
-      // danger particles
-      ctx.save();
-      ctx.globalAlpha = 0.3;
-      for (let i = 0; i < 5; i++) {
-        const px = ox + Math.sin(animT * 0.05 + i * 1.3) * 20;
-        const py = oy - 5 + Math.cos(animT * 0.04 + i * 1.7) * 10;
-        ctx.fillStyle = '#cc3300';
-        ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.globalAlpha=0.3;
+      for(let i=0;i<5;i++){
+        ctx.fillStyle='#cc3300'; ctx.beginPath();
+        ctx.arc(screenX+Math.sin(animT*0.05+i*1.3)*20, oy-5+Math.cos(animT*0.04+i*1.7)*10, 2, 0, Math.PI*2); ctx.fill();
       }
       ctx.restore();
       break;
     }
     case 'landmark': {
-      // Ruined pillar
-      ctx.fillStyle = '#667788';
-      ctx.strokeStyle = '#445566';
-      ctx.lineWidth = 1.5;
+      ctx.fillStyle='#667788'; ctx.strokeStyle='#445566'; ctx.lineWidth=1.5;
       ctx.beginPath();
-      ctx.moveTo(ox - 10, oy); ctx.lineTo(ox - 8, oy - 40);
-      ctx.lineTo(ox + 8, oy - 35); ctx.lineTo(ox + 10, oy);
+      ctx.moveTo(screenX-10,oy); ctx.lineTo(screenX-8,oy-40);
+      ctx.lineTo(screenX+8,oy-35); ctx.lineTo(screenX+10,oy);
       ctx.closePath(); ctx.fill(); ctx.stroke();
-      // cracks
-      ctx.strokeStyle = '#445566'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(ox - 3, oy - 10); ctx.lineTo(ox + 2, oy - 20); ctx.lineTo(ox - 1, oy - 30); ctx.stroke();
-      // glow runes
-      ctx.save();
-      ctx.globalAlpha = 0.4 + Math.sin(animT * 0.04) * 0.2;
-      ctx.fillStyle = '#8888cc';
-      ctx.font = '8px serif';
-      ctx.fillText('*', ox - 4, oy - 15);
-      ctx.fillText('*', ox + 2, oy - 25);
+      ctx.save(); ctx.globalAlpha=0.4+Math.sin(animT*0.04)*0.2;
+      ctx.fillStyle='#8888cc'; ctx.font='10px serif'; ctx.textAlign='center';
+      ctx.fillText('\u2726', screenX-4, oy-18); ctx.fillText('\u2726', screenX+3, oy-28);
       ctx.restore();
       break;
     }
-    case 'signpost': {
-      // Wooden signpost
-      ctx.fillStyle = '#5a3a1a';
-      ctx.fillRect(ox - 2, oy - 35, 4, 35);
-      ctx.fillStyle = '#6b4a22';
-      ctx.strokeStyle = '#3a2a0f';
-      ctx.lineWidth = 1;
-      // signs pointing left/right
-      ctx.beginPath();
-      ctx.moveTo(ox - 20, oy - 30); ctx.lineTo(ox + 3, oy - 30);
-      ctx.lineTo(ox + 3, oy - 22); ctx.lineTo(ox - 20, oy - 22);
-      ctx.lineTo(ox - 24, oy - 26);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(ox + 20, oy - 34); ctx.lineTo(ox - 3, oy - 34);
-      ctx.lineTo(ox - 3, oy - 26); ctx.lineTo(ox + 20, oy - 26);
-      ctx.lineTo(ox + 24, oy - 30);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      break;
-    }
-    case 'monster': {
-      // Monster is drawn by the regular creature drawing system
-      if (expNodeObject.data) {
-        const bossScale = expNodeObject.boss ? 0.65 : 0.5;
-        drawCreatureOnScene(expNodeObject.data, ox, oy - 5, bossScale, false);
-        // Boss aura
-        if (expNodeObject.boss) {
-          ctx.save();
-          ctx.globalAlpha = 0.12 + Math.sin(animT * 0.05) * 0.06;
-          const bg = ctx.createRadialGradient(ox, oy - 20, 0, ox, oy - 20, 50);
-          bg.addColorStop(0, '#ff3300');
-          bg.addColorStop(1, 'transparent');
-          ctx.fillStyle = bg;
-          ctx.beginPath(); ctx.arc(ox, oy - 20, 50, 0, Math.PI * 2); ctx.fill();
-          ctx.restore();
+    case 'monster':
+    case 'boss': {
+      if (node.data && !node.visited) {
+        const scale = node.type === 'boss' ? 0.6 : 0.45;
+        drawCreatureOnScene(node.data, screenX, oy - 5, scale, false);
+        if (node.type === 'boss') {
+          ctx.save(); ctx.globalAlpha = 0.12+Math.sin(animT*0.05)*0.06;
+          const bg = ctx.createRadialGradient(screenX, oy-20, 0, screenX, oy-20, 45);
+          bg.addColorStop(0,'#ff3300'); bg.addColorStop(1,'transparent');
+          ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(screenX, oy-20, 45, 0, Math.PI*2); ctx.fill(); ctx.restore();
         }
       }
       break;
@@ -1269,7 +949,32 @@ function drawExpeditionObject(groundY) {
   }
 }
 
-// Player monster (starter)
+function drawExpeditionScene(groundY) {
+  // Draw trail dots on the ground showing the path ahead
+  ctx.save();
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = '#888';
+  for (let wx = Math.floor(expCameraX / 30) * 30; wx < expCameraX + W * 2; wx += 30) {
+    const sx = (wx - expCameraX) * (W / NODE_SPACING * 0.9) + W * 0.1;
+    if (sx >= -5 && sx <= W + 5) {
+      ctx.beginPath(); ctx.arc(sx, groundY + 3, 1.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // Draw all visible nodes
+  for (const node of expNodes) {
+    const sx = (node.worldX - expCameraX) * (W / NODE_SPACING * 0.9) + W * 0.1;
+    if (sx > -80 && sx < W + 80) {
+      drawExpNode(node, sx, groundY);
+    }
+  }
+
+  // Draw explorer at player position
+  const playerSX = (expPlayerX - expCameraX) * (W / NODE_SPACING * 0.9) + W * 0.1;
+  drawWalkerAt(playerSX, groundY);
+}
+
 const playerMonster = {
   name: 'Kaelfang',
   type: 'earth',
@@ -1619,7 +1324,7 @@ genParticles(currentZone);
 // ---- SCENE DRAWING ----
 function drawScene() {
   const b = BIOMES[currentZone];
-  const scrollOffset = (gameState === 'expedition' || expedition) ? expScrollX : 0;
+  scrollOffset = (gameState === 'expedition') ? expCameraX : 0;
   ctx.clearRect(0,0,W,H);
 
   // Sky gradient
@@ -1644,7 +1349,7 @@ function drawScene() {
   ctx.moveTo(0, groundY);
   // rolling ground
   for(let x=0; x<=W; x+=20){
-    const undulation = Math.sin(x*0.015 + animT*0.005)*6 + Math.sin(x*0.008)*10;
+    const undulation = Math.sin((x+scrollOffset*0.2)*0.015 + animT*0.005)*6 + Math.sin((x+scrollOffset*0.2)*0.008)*10;
     ctx.lineTo(x, groundY + undulation);
   }
   ctx.lineTo(W, H); ctx.lineTo(0, H);
@@ -1682,13 +1387,9 @@ function drawScene() {
   // Walking character
   if(gameState==='walking') drawWalker(groundY);
 
-  // Expedition: draw explorer and node object
+  // Expedition: side-scrolling scene with nodes and player
   if(gameState==='expedition') {
-    // Explorer character
-    const walkerX = expWalking ? lerp(W * 0.2, W * 0.45, expWalkT) : W * 0.3;
-    drawWalkerAt(walkerX, groundY);
-    // Node object (chest, campfire, npc, etc.)
-    if(!expWalking) drawExpeditionObject(groundY);
+    drawExpeditionScene(groundY);
   }
 
   // Battle creatures with 2.5D animations
@@ -2104,8 +1805,8 @@ function drawWalker(groundY) {
 
 function drawWalkerAt(wx, groundY) {
   const wy = groundY - 18;
-  const bobY = expWalking ? Math.sin(animT * 0.15) * 2 : 0;
-  const stepAnim = expWalking ? animT * 0.15 : 0;
+  const bobY = expMoving ? Math.sin(animT * 0.15) * 2 : 0;
+  const stepAnim = expMoving ? animT * 0.15 : 0;
 
   ctx.save();
   ctx.translate(wx, wy + bobY);
@@ -2619,9 +2320,9 @@ function endBattle(result) {
     title.style.color = 'var(--accent)';
     sub.textContent = `${playerMonster.name} has fainted...`;
     // Defeat ends the expedition
-    if (expedition) {
+    if (expNodes.length > 0) {
       sub.textContent += ' Expedition over.';
-      expedition = null;
+      expNodes = [];
     }
   } else {
     title.textContent = 'Escaped';
@@ -2639,12 +2340,12 @@ function dismissResult() {
   document.body.classList.remove('in-battle');
 
   // Return to expedition if one is active
-  if (expedition) {
+  if (expNodes.length > 0) {
     gameState = 'expedition';
     document.getElementById('expeditionUI').classList.add('active');
     enemyMonster = null;
-    // Advance to next node after battle
-    advanceNode();
+    // Resume walking after battle
+    resumeWalking();
   } else {
     document.getElementById('zones').style.display = '';
     exploreUI.style.display = '';
@@ -2666,14 +2367,9 @@ function loop() {
   if(gameState === 'battle' || gameState === 'encounter') {
     updateBattleAnims();
   }
-  // Expedition walking animation
-  if(gameState === 'expedition' && expWalking) {
-    expWalkT += 0.025;
-    if(expWalkT >= 1) {
-      expWalking = false;
-      expWalkT = 0;
-      presentNode();
-    }
+  // Side-scrolling expedition update
+  if(gameState === 'expedition') {
+    updateExpedition();
   }
   drawScene();
   requestAnimationFrame(loop);
