@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monster Generator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    color: #eee;
+    font-family: 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 { font-size: 28px; margin-bottom: 20px; color: #e94560; }
+  .monster-card {
+    background: #16213e;
+    border: 2px solid #0f3460;
+    border-radius: 16px;
+    padding: 20px;
+    width: 400px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  canvas {
+    background: radial-gradient(ellipse at bottom, #1a3a4a 0%, #0d1b2a 100%);
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }
+  .monster-name { font-size: 22px; font-weight: bold; margin-bottom: 4px; }
+  .monster-type { font-size: 14px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; }
+  .lore { font-size: 12px; font-style: italic; opacity: 0.6; margin-bottom: 12px; line-height: 1.4; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; text-align: left; font-size: 14px; margin-bottom: 12px; }
+  .stat-bar { background: #0f3460; border-radius: 4px; height: 8px; margin-top: 2px; }
+  .stat-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+  .moves { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 16px; }
+  .move { background: #0f3460; border-radius: 8px; padding: 6px 8px; font-size: 12px; text-align: center; }
+  .move-name { font-weight: bold; }
+  .move-dmg { opacity: 0.7; font-size: 11px; }
+  button { background: #e94560; color: white; border: none; padding: 12px 32px; border-radius: 8px; font-size: 16px; cursor: pointer; transition: background 0.2s; }
+  button:hover { background: #c73650; }
+  .type-fire { color: #ff6633; }
+  .type-water { color: #3399ff; }
+  .type-earth { color: #88cc44; }
+  .type-electric { color: #ffcc00; }
+  .type-shadow { color: #aa66cc; }
+  .type-ice { color: #88ddff; }
+  .type-toxic { color: #99cc33; }
+</style>
+</head>
+<body>
+<h1>Monster Generator</h1>
+<div class="monster-card">
+  <canvas id="monsterCanvas" width="360" height="320"></canvas>
+  <div class="monster-name" id="name">???</div>
+  <div class="monster-type" id="type">???</div>
+  <div class="lore" id="lore"></div>
+  <div class="stats" id="stats"></div>
+  <div class="moves" id="moves"></div>
+  <button onclick="generateMonster()">New Monster</button>
+</div>
+
+<script>
+// ---- DATA ----
+const TYPES = ['fire','water','earth','electric','shadow','ice','toxic'];
+const TYPE_COLORS = {
+  fire:     { pri:'#cc3300', sec:'#ff6633', hi:'#ffcc00', dark:'#661100', skin:'#dd4422' },
+  water:    { pri:'#1166cc', sec:'#3399ff', hi:'#99ddff', dark:'#003366', skin:'#2277cc' },
+  earth:    { pri:'#557722', sec:'#88cc44', hi:'#ccaa55', dark:'#334411', skin:'#669933' },
+  electric: { pri:'#cc9900', sec:'#ffcc00', hi:'#ffffff', dark:'#664400', skin:'#ddaa22' },
+  shadow:   { pri:'#442266', sec:'#aa66cc', hi:'#cc88ee', dark:'#221133', skin:'#663399' },
+  ice:      { pri:'#4488aa', sec:'#88ddff', hi:'#ffffff', dark:'#223344', skin:'#66aacc' },
+  toxic:    { pri:'#446611', sec:'#99cc33', hi:'#ccff44', dark:'#223308', skin:'#668822' }
+};
+const ARCHETYPES = ['dragon','wyvern','serpent','beast','raptor','demon'];
+const WING_STYLES = ['bat','feathered','skeletal','none'];
+const HORN_STYLES = ['curved','straight','ram','crown','none'];
+const TAIL_STYLES = ['spiked','bladed','whip','club','flame','barbed'];
+const ARMOR = ['scales','plates','smooth','rocky','fur'];
+const HEAD_SHAPES = ['dragon','wolf','raptor','horned','flat'];
+
+const NAME_PRE = ['Ignath','Veyrak','Drak','Thorn','Skael','Orm','Gor','Ven','Xar','Kael',
+  'Malth','Syl','Zeph','Nyx','Char','Vor','Ash','Bael','Cryx','Draug',
+  'Fen','Hex','Jarr','Krag','Loth','Morr','Neth','Pyrr','Quel','Rax'];
+const NAME_SUF = ['thor','gon','ax','meer','rok','ith','zan','vex','claw','maw',
+  'wing','fang','bane','scale','fury','fire','storm','shade','wyrm','drake',
+  'rend','scar','bite','horn','rage','maul','talon','spine','char','doom'];
+
+const MOVE_NAMES = {
+  fire: ['Dragon Breath','Flame Rend','Inferno Claw','Magma Surge','Scorch Wing','Ember Storm','Pyroclasm','Hellfire'],
+  water: ['Tidal Fang','Abyssal Dive','Leviathan Crush','Torrent Blast','Maelstrom','Depth Charge','Hydro Cannon','Riptide Slash'],
+  earth: ['Earthshatter','Stone Fang','Tremor Slam','Root Crush','Avalanche','Tectonic Fury','Boulder Smash','Quake Claw'],
+  electric: ['Thunder Fang','Storm Strike','Chain Lightning','Volt Surge','Tempest Claw','Arc Flash','Thunderclap','Plasma Bolt'],
+  shadow: ['Void Rend','Nightmare Claw','Shadow Strike','Soul Drain','Eclipse Fang','Dark Nova','Phantom Slash','Dread Pulse'],
+  ice: ['Frost Fang','Glacier Crush','Blizzard Claw','Cryo Blast','Permafrost','Ice Lance','Shatter Storm','Frozen Wrath'],
+  toxic: ['Venom Fang','Acid Breath','Plague Claw','Toxin Surge','Miasma Cloud','Blight Strike','Corrosive Bite','Necrosis']
+};
+
+const LORE_TEMPLATES = [
+  'Ancient warriors once rode these beasts into battle across TYPE_ADJ wastelands.',
+  'Its TYPE_FEATURE can shatter stone. Few survive an encounter in the wild.',
+  'Born in TYPE_ADJ depths, it surfaces only to hunt.',
+  'Scholars believe it is the last of a line of TYPE_ADJ war-beasts.',
+  'Its roar can be heard across three valleys. It knows no fear.',
+  'Forged in TYPE_ADJ fire, its hide turns aside steel blades.',
+  'It stalks the TYPE_ADJ highlands, apex predator of its domain.',
+];
+const TYPE_ADJ_MAP = { fire:'volcanic', water:'abyssal', earth:'primordial', electric:'storm-wracked', shadow:'shadow-cursed', ice:'glacial', toxic:'blighted' };
+const TYPE_FEATURE_MAP = { fire:'molten jaws', water:'crushing coils', earth:'stone-plated skull', electric:'crackling horns', shadow:'void-black fangs', ice:'crystalline wings', toxic:'venomous spines' };
+
+function rng(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function pick(arr) { return arr[rng(0, arr.length - 1)]; }
+function pickN(arr, n) { return [...arr].sort(() => Math.random() - 0.5).slice(0, n); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return {r,g,b};
+}
+function rgbToHex(r,g,b) {
+  return '#' + [r,g,b].map(v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+}
+function lighten(hex, amt) {
+  const c = hexToRgb(hex);
+  return rgbToHex(c.r + (255-c.r)*amt, c.g + (255-c.g)*amt, c.b + (255-c.b)*amt);
+}
+function darken(hex, amt) {
+  const c = hexToRgb(hex);
+  return rgbToHex(c.r*(1-amt), c.g*(1-amt), c.b*(1-amt));
+}
+
+function generateRecipe() {
+  const type = pick(TYPES);
+  const col = TYPE_COLORS[type];
+  const arch = pick(ARCHETYPES);
+  const hasWings = (arch === 'dragon' || arch === 'wyvern' || arch === 'demon') ? pick(['bat','feathered','skeletal']) : (Math.random() > 0.6 ? pick(WING_STYLES) : 'none');
+  const legCount = arch === 'serpent' ? 0 : (arch === 'wyvern' ? 2 : (arch === 'beast' || arch === 'raptor' ? 4 : rng(2,4)));
+
+  return {
+    name: pick(NAME_PRE) + pick(NAME_SUF),
+    type, level: rng(1, 50),
+    archetype: arch,
+    colors: col,
+    head: { shape: arch === 'beast' ? 'wolf' : (arch === 'raptor' ? 'raptor' : pick(HEAD_SHAPES)), size: 0.8 + Math.random() * 0.5 },
+    neck: { length: arch === 'serpent' ? 1.5 + Math.random() : (arch === 'beast' ? 0.3 : 0.5 + Math.random() * 0.8), thick: 0.3 + Math.random() * 0.3 },
+    body: { size: 0.8 + Math.random() * 0.6, bulk: arch === 'beast' ? 1.2 : (arch === 'serpent' ? 0.6 : 0.8 + Math.random() * 0.4) },
+    legs: { count: legCount, style: arch === 'raptor' ? 'digitigrade' : (arch === 'beast' ? 'plantigrade' : 'digitigrade'), clawSize: 0.5 + Math.random() * 0.8 },
+    wings: { style: hasWings, span: 1 + Math.random() * 1.2, membrane: hasWings === 'bat' || hasWings === 'skeletal' },
+    tail: { style: pick(TAIL_STYLES), length: 0.8 + Math.random() * 1.2, thick: 0.2 + Math.random() * 0.3 },
+    horns: { style: pick(HORN_STYLES), size: 0.5 + Math.random() * 1 },
+    armor: pick(ARMOR),
+    spines: Math.random() > 0.4,
+    fangs: Math.random() > 0.3,
+    eyeGlow: Math.random() > 0.3,
+    breathEffect: Math.random() > 0.6,
+    scarred: Math.random() > 0.7,
+    stats: { hp: rng(30, 120), atk: rng(15, 90), def: rng(15, 90), spd: rng(15, 90) },
+    moves: pickN(MOVE_NAMES[type], 4).map(name => ({ name, damage: rng(15, 65), type }))
+  };
+}
+
+// ---- DRAWING ENGINE ----
+const canvas = document.getElementById('monsterCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+let animT = 0;
+
+function drawCreature(r) {
+  ctx.clearRect(0, 0, W, H);
+  const S = 40 * r.body.size; // base scale
+  const col = r.colors;
+
+  // position: body center
+  const bx = W * 0.48;
+  const by = H * 0.62;
+
+  // breathing
+  const breathe = Math.sin(animT * 0.04) * 1.5;
+
+  // ground shadow
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(bx, by + S * 1.5 + 5, S * 2.2, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // -- TAIL (behind everything) --
+  drawTail(bx, by, S, r, col);
+
+  // -- WINGS (behind body) --
+  if (r.wings.style !== 'none') {
+    drawWing(bx, by, S, r, col, -1); // left wing (behind)
+  }
+
+  // -- BACK LEGS --
+  if (r.legs.count >= 4) {
+    drawLeg(bx + S * 0.6, by + S * 0.5, S, r, col, 1, true);
+    drawLeg(bx - S * 0.3, by + S * 0.5, S, r, col, -1, true);
+  }
+
+  // -- BODY --
+  drawBody(bx, by + breathe, S, r, col);
+
+  // -- FRONT LEGS --
+  if (r.legs.count >= 2) {
+    drawLeg(bx + S * 0.8, by + S * 0.4, S, r, col, 1, false);
+    drawLeg(bx - S * 0.5, by + S * 0.4, S, r, col, -1, false);
+  }
+
+  // -- NECK + HEAD --
+  const neckLen = S * r.neck.length * 1.5;
+  const neckAngle = -Math.PI * 0.35 - breathe * 0.005;
+  const headX = bx - S * 0.4 + Math.cos(neckAngle) * neckLen;
+  const headY = by - S * 0.3 + Math.sin(neckAngle) * neckLen + breathe;
+
+  drawNeck(bx - S * 0.4, by - S * 0.3 + breathe, headX, headY, S, r, col);
+  drawHead(headX, headY, S, r, col, neckAngle);
+
+  // -- WINGS (front, right wing) --
+  if (r.wings.style !== 'none') {
+    drawWing(bx, by, S, r, col, 1);
+  }
+
+  // -- BREATH EFFECT --
+  if (r.breathEffect) {
+    drawBreathEffect(headX, headY, S, r, col, neckAngle);
+  }
+}
+
+function drawBody(bx, by, S, r, col) {
+  ctx.save();
+  const bulk = r.body.bulk;
+
+  // body shape
+  ctx.fillStyle = col.skin;
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  // muscular torso shape
+  ctx.moveTo(bx - S * 0.9, by - S * 0.2);
+  ctx.bezierCurveTo(bx - S * 1, by - S * 0.8 * bulk, bx + S * 0.3, by - S * bulk, bx + S * 0.7, by - S * 0.5 * bulk);
+  ctx.bezierCurveTo(bx + S * 1.2, by - S * 0.2, bx + S * 1.2, by + S * 0.6, bx + S * 0.8, by + S * 0.8);
+  ctx.bezierCurveTo(bx + S * 0.3, by + S * 1.1, bx - S * 0.5, by + S * 1, bx - S * 0.9, by + S * 0.6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // belly (lighter)
+  ctx.fillStyle = lighten(col.skin, 0.25);
+  ctx.beginPath();
+  ctx.moveTo(bx - S * 0.5, by + S * 0.1);
+  ctx.bezierCurveTo(bx - S * 0.4, by + S * 0.7, bx + S * 0.5, by + S * 0.8, bx + S * 0.6, by + S * 0.1);
+  ctx.bezierCurveTo(bx + S * 0.3, by + S * 0.5, bx - S * 0.2, by + S * 0.5, bx - S * 0.5, by + S * 0.1);
+  ctx.fill();
+
+  // armor texture
+  drawArmorTexture(bx, by, S, r, col);
+
+  // spines along back
+  if (r.spines) {
+    drawSpines(bx, by, S, r, col);
+  }
+
+  // scars
+  if (r.scarred) {
+    ctx.strokeStyle = lighten(col.skin, 0.15);
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(bx - S * 0.2, by - S * 0.3);
+    ctx.lineTo(bx + S * 0.3, by + S * 0.2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(bx - S * 0.1, by - S * 0.25);
+    ctx.lineTo(bx + S * 0.4, by + S * 0.15);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawArmorTexture(bx, by, S, r, col) {
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  switch (r.armor) {
+    case 'scales':
+      ctx.strokeStyle = col.dark;
+      ctx.lineWidth = 0.8;
+      for (let row = -0.5; row < 0.6; row += 0.18) {
+        for (let c = -0.6; c < 0.8; c += 0.2) {
+          const offset = (Math.floor(row * 10) % 2) * 0.1;
+          const sx = bx + (c + offset) * S;
+          const sy = by + row * S;
+          ctx.beginPath();
+          ctx.arc(sx, sy, S * 0.08, 0.2 * Math.PI, 0.8 * Math.PI);
+          ctx.stroke();
+        }
+      }
+      break;
+    case 'plates':
+      ctx.strokeStyle = darken(col.skin, 0.2);
+      ctx.fillStyle = lighten(col.skin, 0.08);
+      ctx.lineWidth = 1.5;
+      const platePositions = [[-0.3,-0.4],[0.1,-0.5],[0.4,-0.3],[0,-0.1],[0.3,0],[0.6,0.1]];
+      for (const [px, py] of platePositions) {
+        ctx.beginPath();
+        ctx.ellipse(bx + px * S, by + py * S, S * 0.18, S * 0.13, px * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      break;
+    case 'rocky':
+      ctx.fillStyle = darken(col.skin, 0.15);
+      for (let i = 0; i < 8; i++) {
+        const rx = bx + (Math.random() - 0.3) * S * 1.2;
+        const ry = by + (Math.random() - 0.3) * S * 0.8;
+        ctx.beginPath();
+        const pts = rng(4, 6);
+        for (let p = 0; p < pts; p++) {
+          const a = (p / pts) * Math.PI * 2;
+          const rad = S * (0.06 + Math.random() * 0.06);
+          const x = rx + Math.cos(a) * rad;
+          const y = ry + Math.sin(a) * rad;
+          p === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    case 'fur':
+      ctx.strokeStyle = lighten(col.skin, 0.1);
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 30; i++) {
+        const fx = bx + (Math.random() - 0.3) * S * 1.4;
+        const fy = by + (Math.random() - 0.3) * S * 1;
+        const fa = -Math.PI * 0.5 + (Math.random() - 0.5) * 0.8;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(fx + Math.cos(fa) * S * 0.12, fy + Math.sin(fa) * S * 0.12);
+        ctx.stroke();
+      }
+      break;
+  }
+  ctx.restore();
+}
+
+function drawSpines(bx, by, S, r, col) {
+  ctx.save();
+  ctx.fillStyle = col.pri;
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 1;
+  const spineCount = rng(5, 9);
+  for (let i = 0; i < spineCount; i++) {
+    const t = i / (spineCount - 1);
+    const sx = bx - S * 0.7 + t * S * 1.6;
+    const sy = by - S * 0.3 - Math.sin(t * Math.PI) * S * 0.5 * r.body.bulk;
+    const sHeight = S * (0.2 + Math.sin(t * Math.PI) * 0.25);
+    ctx.beginPath();
+    ctx.moveTo(sx - S * 0.04, sy);
+    ctx.lineTo(sx, sy - sHeight);
+    ctx.lineTo(sx + S * 0.04, sy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawNeck(x1, y1, x2, y2, S, r, col) {
+  ctx.save();
+  const thick = S * r.neck.thick;
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const nx = -dy / len, ny = dx / len;
+
+  // neck body
+  ctx.fillStyle = col.skin;
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 2;
+
+  const midX = (x1 + x2) / 2 + nx * thick * 0.3;
+  const midY = (y1 + y2) / 2 + ny * thick * 0.3;
+
+  ctx.beginPath();
+  ctx.moveTo(x1 + nx * thick, y1 + ny * thick);
+  ctx.quadraticCurveTo(midX + nx * thick * 1.1, midY + ny * thick * 1.1, x2 + nx * thick * 0.6, y2 + ny * thick * 0.6);
+  ctx.lineTo(x2 - nx * thick * 0.6, y2 - ny * thick * 0.6);
+  ctx.quadraticCurveTo(midX - nx * thick * 0.8, midY - ny * thick * 0.8, x1 - nx * thick, y1 - ny * thick);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // throat (lighter underside)
+  ctx.fillStyle = lighten(col.skin, 0.2);
+  ctx.globalAlpha = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(x1 - nx * thick * 0.7, y1 - ny * thick * 0.7);
+  ctx.quadraticCurveTo(midX - nx * thick * 0.5, midY - ny * thick * 0.5, x2 - nx * thick * 0.4, y2 - ny * thick * 0.4);
+  ctx.lineTo(x2, y2);
+  ctx.quadraticCurveTo(midX - nx * thick * 0.2, midY - ny * thick * 0.2, x1 - nx * thick * 0.3, y1 - ny * thick * 0.3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // neck scales/segments
+  if (r.armor === 'scales' || r.armor === 'plates') {
+    ctx.strokeStyle = col.dark;
+    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.3;
+    const segments = 6;
+    for (let i = 1; i < segments; i++) {
+      const t = i / segments;
+      const sx = lerp(x1, x2, t);
+      const sy = lerp(y1, y2, t);
+      const sThick = lerp(thick, thick * 0.6, t);
+      ctx.beginPath();
+      ctx.moveTo(sx + nx * sThick, sy + ny * sThick);
+      ctx.lineTo(sx - nx * sThick, sy - ny * sThick);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawHead(hx, hy, S, r, col, angle) {
+  ctx.save();
+  ctx.translate(hx, hy);
+  ctx.rotate(angle + Math.PI * 0.1);
+
+  const hs = S * r.head.size;
+
+  // horns (behind head)
+  if (r.horns.style !== 'none') {
+    drawHorns(0, 0, hs, r, col);
+  }
+
+  // head/skull shape
+  ctx.fillStyle = col.skin;
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 2;
+
+  switch (r.head.shape) {
+    case 'dragon':
+      // elongated snout
+      ctx.beginPath();
+      ctx.moveTo(-hs * 0.3, -hs * 0.5);
+      ctx.bezierCurveTo(-hs * 0.1, -hs * 0.7, hs * 0.5, -hs * 0.6, hs * 1.1, -hs * 0.25);
+      ctx.bezierCurveTo(hs * 1.3, -hs * 0.1, hs * 1.3, hs * 0.15, hs * 1.1, hs * 0.25);
+      ctx.bezierCurveTo(hs * 0.5, hs * 0.5, -hs * 0.1, hs * 0.5, -hs * 0.3, hs * 0.4);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      break;
+    case 'wolf':
+      ctx.beginPath();
+      ctx.moveTo(-hs * 0.3, -hs * 0.45);
+      ctx.bezierCurveTo(0, -hs * 0.6, hs * 0.4, -hs * 0.5, hs * 1, -hs * 0.15);
+      ctx.bezierCurveTo(hs * 1.15, 0, hs * 1, hs * 0.2, hs * 0.9, hs * 0.25);
+      ctx.bezierCurveTo(hs * 0.4, hs * 0.45, 0, hs * 0.5, -hs * 0.3, hs * 0.35);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      break;
+    case 'raptor':
+      ctx.beginPath();
+      ctx.moveTo(-hs * 0.25, -hs * 0.5);
+      ctx.bezierCurveTo(hs * 0.1, -hs * 0.65, hs * 0.6, -hs * 0.45, hs * 0.9, -hs * 0.1);
+      ctx.lineTo(hs * 1.1, 0);
+      ctx.lineTo(hs * 0.9, hs * 0.15);
+      ctx.bezierCurveTo(hs * 0.5, hs * 0.45, 0, hs * 0.5, -hs * 0.25, hs * 0.35);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      break;
+    case 'horned':
+      ctx.beginPath();
+      ctx.moveTo(-hs * 0.35, -hs * 0.5);
+      ctx.bezierCurveTo(0, -hs * 0.65, hs * 0.4, -hs * 0.55, hs * 0.9, -hs * 0.2);
+      ctx.bezierCurveTo(hs * 1.1, 0, hs * 1, hs * 0.25, hs * 0.8, hs * 0.3);
+      ctx.bezierCurveTo(hs * 0.3, hs * 0.5, -hs * 0.1, hs * 0.5, -hs * 0.35, hs * 0.4);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      break;
+    case 'flat':
+      ctx.beginPath();
+      ctx.moveTo(-hs * 0.3, -hs * 0.35);
+      ctx.bezierCurveTo(hs * 0.2, -hs * 0.5, hs * 0.7, -hs * 0.35, hs * 1.1, -hs * 0.1);
+      ctx.bezierCurveTo(hs * 1.2, hs * 0.05, hs * 1.1, hs * 0.2, hs * 0.9, hs * 0.25);
+      ctx.bezierCurveTo(hs * 0.5, hs * 0.4, -hs * 0.1, hs * 0.4, -hs * 0.3, hs * 0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      break;
+  }
+
+  // snout ridge / brow
+  ctx.strokeStyle = darken(col.skin, 0.15);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(hs * 0.1, -hs * 0.45);
+  ctx.quadraticCurveTo(hs * 0.5, -hs * 0.5, hs * 0.85, -hs * 0.25);
+  ctx.stroke();
+
+  // nostril
+  ctx.fillStyle = col.dark;
+  ctx.beginPath();
+  ctx.ellipse(hs * 0.85, -hs * 0.12, hs * 0.06, hs * 0.04, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eye
+  const eyeX = hs * 0.35, eyeY = -hs * 0.2;
+  const eyeW = hs * 0.18, eyeH = hs * 0.12;
+
+  // eye socket shadow
+  ctx.fillStyle = col.dark;
+  ctx.beginPath();
+  ctx.ellipse(eyeX, eyeY, eyeW * 1.4, eyeH * 1.6, -0.1, 0, Math.PI * 2);
+  ctx.globalAlpha = 0.3;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // eye white/color
+  ctx.fillStyle = r.eyeGlow ? col.hi : '#ddddaa';
+  ctx.beginPath();
+  ctx.ellipse(eyeX, eyeY, eyeW, eyeH, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // pupil (slit)
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.ellipse(eyeX + hs * 0.02, eyeY, eyeW * 0.2, eyeH * 0.85, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eye glow
+  if (r.eyeGlow) {
+    ctx.save();
+    const glow = ctx.createRadialGradient(eyeX, eyeY, 0, eyeX, eyeY, eyeW * 2.5);
+    glow.addColorStop(0, col.hi + '44');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(eyeX, eyeY, eyeW * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // eye shine
+  ctx.fillStyle = '#fff';
+  ctx.globalAlpha = 0.6;
+  ctx.beginPath();
+  ctx.arc(eyeX - eyeW * 0.3, eyeY - eyeH * 0.3, eyeW * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // brow ridge
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(eyeX - eyeW * 1.3, eyeY - eyeH * 1.2);
+  ctx.quadraticCurveTo(eyeX, eyeY - eyeH * 2, eyeX + eyeW * 1.5, eyeY - eyeH * 0.8);
+  ctx.stroke();
+
+  // jaw line
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(hs * 0.05, hs * 0.2);
+  ctx.bezierCurveTo(hs * 0.3, hs * 0.35, hs * 0.7, hs * 0.32, hs * 1, hs * 0.15);
+  ctx.stroke();
+
+  // teeth/fangs
+  if (r.fangs) {
+    ctx.fillStyle = '#eee8dd';
+    ctx.strokeStyle = col.dark;
+    ctx.lineWidth = 1;
+    const teethY = hs * 0.18;
+    // upper fangs
+    for (let t = 0; t < 5; t++) {
+      const tx = hs * 0.2 + t * hs * 0.16;
+      const tSize = (t === 1 || t === 3) ? hs * 0.18 : hs * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(tx - hs * 0.03, teethY);
+      ctx.lineTo(tx, teethY + tSize);
+      ctx.lineTo(tx + hs * 0.03, teethY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // ear/frill for certain heads
+  if (r.head.shape === 'wolf') {
+    ctx.fillStyle = col.skin;
+    ctx.strokeStyle = col.dark;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-hs * 0.1, -hs * 0.4);
+    ctx.lineTo(-hs * 0.05, -hs * 0.8);
+    ctx.lineTo(hs * 0.15, -hs * 0.45);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // inner ear
+    ctx.fillStyle = lighten(col.skin, 0.3);
+    ctx.beginPath();
+    ctx.moveTo(-hs * 0.05, -hs * 0.45);
+    ctx.lineTo(-hs * 0.02, -hs * 0.7);
+    ctx.lineTo(hs * 0.1, -hs * 0.47);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawHorns(hx, hy, hs, r, col) {
+  ctx.save();
+  const hornSize = hs * r.horns.size;
+  ctx.fillStyle = darken(col.skin, 0.3);
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 1.5;
+
+  switch (r.horns.style) {
+    case 'curved':
+      // two curved horns sweeping back
+      ctx.beginPath();
+      ctx.moveTo(hx - hs * 0.05, hy - hs * 0.35);
+      ctx.quadraticCurveTo(hx - hornSize * 0.5, hy - hornSize * 1.3, hx - hornSize * 0.9, hy - hornSize * 0.5);
+      ctx.quadraticCurveTo(hx - hornSize * 0.4, hy - hornSize * 0.9, hx + hs * 0.05, hy - hs * 0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // second horn (more visible, curving other way slightly)
+      ctx.beginPath();
+      ctx.moveTo(hx + hs * 0.05, hy - hs * 0.4);
+      ctx.quadraticCurveTo(hx - hornSize * 0.3, hy - hornSize * 1.5, hx - hornSize * 0.7, hy - hornSize * 0.8);
+      ctx.quadraticCurveTo(hx - hornSize * 0.2, hy - hornSize * 1.1, hx + hs * 0.15, hy - hs * 0.35);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      break;
+    case 'straight':
+      for (let side = -1; side <= 1; side += 2) {
+        ctx.beginPath();
+        const bx2 = hx + side * hs * 0.15;
+        ctx.moveTo(bx2 - hs * 0.04, hy - hs * 0.35);
+        ctx.lineTo(bx2 + side * hornSize * 0.3, hy - hornSize * 1.4);
+        ctx.lineTo(bx2 + hs * 0.04, hy - hs * 0.35);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+      break;
+    case 'ram':
+      for (let side = -1; side <= 1; side += 2) {
+        ctx.beginPath();
+        const rx = hx + side * hs * 0.2;
+        ctx.moveTo(rx, hy - hs * 0.3);
+        ctx.bezierCurveTo(rx + side * hornSize * 0.8, hy - hornSize * 0.8,
+          rx + side * hornSize * 1, hy + hornSize * 0.2,
+          rx + side * hornSize * 0.5, hy + hornSize * 0.3);
+        ctx.bezierCurveTo(rx + side * hornSize * 0.6, hy,
+          rx + side * hornSize * 0.4, hy - hornSize * 0.4,
+          rx, hy - hs * 0.25);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // horn ridges
+        ctx.strokeStyle = lighten(col.dark, 0.1);
+        ctx.lineWidth = 0.8;
+        for (let seg = 0.2; seg < 0.8; seg += 0.15) {
+          ctx.beginPath();
+          const segX = rx + side * hornSize * 0.7 * seg;
+          const segY = hy - hornSize * 0.5 * Math.sin(seg * Math.PI);
+          ctx.arc(segX, segY, hornSize * 0.08, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = col.dark;
+        ctx.lineWidth = 1.5;
+      }
+      break;
+    case 'crown':
+      const crownPts = 5;
+      for (let i = 0; i < crownPts; i++) {
+        const t = (i / (crownPts - 1)) - 0.5;
+        const cx2 = hx + t * hs * 0.6;
+        const ch = hornSize * (0.6 + Math.sin((i / crownPts) * Math.PI) * 0.6);
+        ctx.beginPath();
+        ctx.moveTo(cx2 - hs * 0.04, hy - hs * 0.35);
+        ctx.lineTo(cx2, hy - hs * 0.35 - ch);
+        ctx.lineTo(cx2 + hs * 0.04, hy - hs * 0.35);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+      break;
+  }
+  ctx.restore();
+}
+
+function drawLeg(lx, ly, S, r, col, dir, isBack) {
+  ctx.save();
+  ctx.fillStyle = isBack ? darken(col.skin, 0.15) : col.skin;
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 2;
+
+  const legLen = S * 0.9;
+  const thick = S * 0.2;
+  const clawS = S * 0.15 * r.legs.clawSize;
+
+  if (r.legs.style === 'digitigrade') {
+    // upper leg
+    const kneeX = lx + dir * S * 0.1;
+    const kneeY = ly + legLen * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(lx - thick * 0.7, ly);
+    ctx.quadraticCurveTo(lx + dir * thick, ly + legLen * 0.25, kneeX + thick * 0.5, kneeY);
+    ctx.lineTo(kneeX - thick * 0.5, kneeY);
+    ctx.quadraticCurveTo(lx - dir * thick * 0.3, ly + legLen * 0.25, lx + thick * 0.3, ly);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // lower leg (angled back)
+    const footX = kneeX + dir * S * 0.15;
+    const footY = ly + legLen;
+    ctx.beginPath();
+    ctx.moveTo(kneeX - thick * 0.3, kneeY);
+    ctx.quadraticCurveTo(kneeX - dir * thick * 0.2, kneeY + legLen * 0.3, footX - thick * 0.2, footY);
+    ctx.lineTo(footX + thick * 0.2, footY);
+    ctx.quadraticCurveTo(kneeX + dir * thick * 0.3, kneeY + legLen * 0.3, kneeX + thick * 0.3, kneeY);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // foot with claws
+    ctx.fillStyle = isBack ? darken(col.skin, 0.2) : darken(col.skin, 0.1);
+    for (let c = 0; c < 3; c++) {
+      const cx2 = footX + (c - 1) * clawS * 0.8 + dir * clawS * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(cx2 - clawS * 0.2, footY);
+      ctx.lineTo(cx2 + dir * clawS * 0.3, footY + clawS);
+      ctx.lineTo(cx2 + clawS * 0.2, footY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  } else {
+    // plantigrade (beast legs)
+    const footX = lx + dir * S * 0.05;
+    const footY = ly + legLen;
+    // thick leg
+    ctx.beginPath();
+    ctx.moveTo(lx - thick, ly);
+    ctx.lineTo(footX - thick * 0.8, footY);
+    ctx.lineTo(footX + thick * 0.8, footY);
+    ctx.lineTo(lx + thick, ly);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // paw
+    ctx.beginPath();
+    ctx.ellipse(footX, footY, thick * 1, thick * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // claws
+    for (let c = -1; c <= 1; c++) {
+      const cx2 = footX + c * thick * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(cx2, footY);
+      ctx.lineTo(cx2 + dir * clawS * 0.2, footY + clawS * 0.6);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawWing(bx, by, S, r, col, side) {
+  ctx.save();
+  const span = S * r.wings.span * 2;
+  const wx = bx + side * S * 0.3;
+  const wy = by - S * 0.4;
+
+  // wing "arm" bones
+  const elbowX = wx + side * span * 0.4;
+  const elbowY = wy - span * 0.45;
+  const tipX = wx + side * span * 0.85;
+  const tipY = wy - span * 0.25;
+
+  // finger bones
+  const finger1X = tipX + side * span * 0.15;
+  const finger1Y = tipY + span * 0.3;
+  const finger2X = tipX + side * span * 0.05;
+  const finger2Y = tipY + span * 0.5;
+
+  if (r.wings.membrane || r.wings.style === 'bat' || r.wings.style === 'skeletal') {
+    // membrane
+    ctx.fillStyle = r.wings.style === 'skeletal' ? col.dark + '44' : col.pri + '55';
+    ctx.strokeStyle = col.dark;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(wx, wy);
+    ctx.quadraticCurveTo(elbowX * 0.8 + wx * 0.2, elbowY, elbowX, elbowY);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(finger1X, finger1Y);
+    ctx.lineTo(finger2X, finger2Y);
+    ctx.quadraticCurveTo(wx + side * span * 0.2, by + S * 0.3, wx, by + S * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // membrane veins
+    ctx.strokeStyle = col.dark;
+    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.moveTo(elbowX, elbowY);
+    ctx.quadraticCurveTo(elbowX + side * span * 0.1, wy + span * 0.1, wx + side * span * 0.15, by + S * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.quadraticCurveTo(tipX - side * span * 0.1, tipY + span * 0.2, wx + side * span * 0.1, by);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  if (r.wings.style === 'feathered') {
+    // feathered wing
+    ctx.fillStyle = lighten(col.skin, 0.1);
+    ctx.strokeStyle = col.dark;
+    ctx.lineWidth = 1;
+    const featherCount = 8;
+    for (let f = 0; f < featherCount; f++) {
+      const t = f / (featherCount - 1);
+      const fx = lerp(elbowX, finger2X, t);
+      const fy = lerp(elbowY, finger2Y, t);
+      const fLen = span * (0.15 + t * 0.25);
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.quadraticCurveTo(fx + side * fLen * 0.1, fy + fLen * 0.6, fx - side * fLen * 0.1, fy + fLen);
+      ctx.quadraticCurveTo(fx - side * fLen * 0.05, fy + fLen * 0.5, fx, fy);
+      ctx.fill(); ctx.stroke();
+    }
+  }
+
+  // bone structure on top
+  ctx.strokeStyle = col.skin;
+  ctx.lineWidth = S * 0.12;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(wx, wy);
+  ctx.lineTo(elbowX, elbowY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  // outline
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(wx, wy);
+  ctx.lineTo(elbowX, elbowY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+
+  // finger bones
+  ctx.lineWidth = S * 0.06;
+  ctx.strokeStyle = col.skin;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(finger1X, finger1Y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(finger2X, finger2Y);
+  ctx.stroke();
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(finger1X, finger1Y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(finger2X, finger2Y);
+  ctx.stroke();
+
+  // wing claw at elbow
+  ctx.fillStyle = darken(col.skin, 0.3);
+  ctx.beginPath();
+  ctx.moveTo(elbowX, elbowY);
+  ctx.lineTo(elbowX + side * S * 0.1, elbowY - S * 0.15);
+  ctx.lineTo(elbowX + side * S * 0.05, elbowY + S * 0.05);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawTail(bx, by, S, r, col) {
+  ctx.save();
+  const len = S * r.tail.length * 2;
+  const thick = S * r.tail.thick;
+  const tx = bx + S * 0.7;
+  const ty = by + S * 0.3;
+
+  // tail curve
+  const cp1x = tx + len * 0.3;
+  const cp1y = ty + len * 0.3;
+  const cp2x = tx + len * 0.7;
+  const cp2y = ty - len * 0.1;
+  const endX = tx + len;
+  const endY = ty + len * 0.15;
+
+  // draw thick tail with taper
+  ctx.fillStyle = col.skin;
+  ctx.strokeStyle = col.dark;
+  ctx.lineWidth = 1.5;
+
+  // build tail as filled shape
+  const steps = 20;
+  const topPts = [], botPts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = Math.pow(1-t,3)*tx + 3*Math.pow(1-t,2)*t*cp1x + 3*(1-t)*t*t*cp2x + t*t*t*endX;
+    const y = Math.pow(1-t,3)*ty + 3*Math.pow(1-t,2)*t*cp1y + 3*(1-t)*t*t*cp2y + t*t*t*endY;
+    const w = thick * (1 - t * 0.85);
+    // approximate normal
+    const nx2 = 0, ny2 = 1;
+    topPts.push({ x: x + nx2 * w, y: y - w });
+    botPts.push({ x: x - nx2 * w, y: y + w });
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  for (let i = 1; i < topPts.length; i++) ctx.lineTo(topPts[i].x, topPts[i].y);
+  for (let i = botPts.length - 1; i >= 0; i--) ctx.lineTo(botPts[i].x, botPts[i].y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // tail tip decoration
+  switch (r.tail.style) {
+    case 'spiked':
+      ctx.fillStyle = col.pri;
+      for (let i = 0; i < 3; i++) {
+        const t = 0.6 + i * 0.13;
+        const sx = Math.pow(1-t,3)*tx + 3*Math.pow(1-t,2)*t*cp1x + 3*(1-t)*t*t*cp2x + t*t*t*endX;
+        const sy = Math.pow(1-t,3)*ty + 3*Math.pow(1-t,2)*t*cp1y + 3*(1-t)*t*t*cp2y + t*t*t*endY;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - thick * (1 - t * 0.85));
+        ctx.lineTo(sx + S * 0.05, sy - thick * (1 - t * 0.85) - S * 0.2);
+        ctx.lineTo(sx + S * 0.1, sy - thick * (1 - t * 0.85));
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    case 'bladed':
+      ctx.fillStyle = darken(col.skin, 0.2);
+      ctx.beginPath();
+      ctx.moveTo(endX - S * 0.1, endY);
+      ctx.lineTo(endX + S * 0.3, endY - S * 0.2);
+      ctx.lineTo(endX + S * 0.35, endY + S * 0.05);
+      ctx.lineTo(endX + S * 0.3, endY + S * 0.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = col.dark;
+      ctx.stroke();
+      break;
+    case 'club':
+      ctx.fillStyle = darken(col.skin, 0.15);
+      ctx.beginPath();
+      ctx.arc(endX, endY, S * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = col.dark;
+      ctx.stroke();
+      // studs
+      ctx.fillStyle = col.dark;
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI * 0.5;
+        ctx.beginPath();
+        ctx.arc(endX + Math.cos(a) * S * 0.13, endY + Math.sin(a) * S * 0.13, S * 0.04, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    case 'flame':
+      // fire at tip
+      const flames = 5;
+      for (let i = 0; i < flames; i++) {
+        const fa = (i / flames) * Math.PI * 2;
+        const fr = S * 0.15 + Math.sin(animT * 0.1 + i) * S * 0.05;
+        ctx.fillStyle = i % 2 === 0 ? col.hi : col.sec;
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.quadraticCurveTo(
+          endX + Math.cos(fa) * fr * 1.5,
+          endY + Math.sin(fa) * fr * 1.5,
+          endX + Math.cos(fa + 0.3) * fr * 0.5,
+          endY + Math.sin(fa + 0.3) * fr * 0.5
+        );
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      break;
+    case 'barbed':
+      ctx.fillStyle = col.pri;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY - S * 0.08);
+      ctx.lineTo(endX + S * 0.25, endY);
+      ctx.lineTo(endX, endY + S * 0.08);
+      ctx.lineTo(endX + S * 0.1, endY);
+      ctx.closePath();
+      ctx.fill();
+      // barbs along tail
+      ctx.strokeStyle = col.dark;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const t = 0.4 + i * 0.12;
+        const bx2 = Math.pow(1-t,3)*tx + 3*Math.pow(1-t,2)*t*cp1x + 3*(1-t)*t*t*cp2x + t*t*t*endX;
+        const by2 = Math.pow(1-t,3)*ty + 3*Math.pow(1-t,2)*t*cp1y + 3*(1-t)*t*t*cp2y + t*t*t*endY;
+        ctx.beginPath();
+        ctx.moveTo(bx2, by2 + thick * 0.3);
+        ctx.lineTo(bx2 - S * 0.08, by2 + thick * 0.3 + S * 0.12);
+        ctx.stroke();
+      }
+      break;
+    case 'whip':
+      // already tapers to thin — just add a small curl at end
+      ctx.strokeStyle = col.skin;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.quadraticCurveTo(endX + S * 0.15, endY - S * 0.15, endX + S * 0.1, endY - S * 0.25);
+      ctx.stroke();
+      break;
+  }
+
+  // tail scales
+  if (r.armor === 'scales' || r.armor === 'plates') {
+    ctx.strokeStyle = col.dark;
+    ctx.lineWidth = 0.6;
+    ctx.globalAlpha = 0.25;
+    for (let i = 0; i < 8; i++) {
+      const t = 0.1 + i * 0.1;
+      const sx = Math.pow(1-t,3)*tx + 3*Math.pow(1-t,2)*t*cp1x + 3*(1-t)*t*t*cp2x + t*t*t*endX;
+      const sy = Math.pow(1-t,3)*ty + 3*Math.pow(1-t,2)*t*cp1y + 3*(1-t)*t*t*cp2y + t*t*t*endY;
+      const w = thick * (1 - t * 0.85);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - w);
+      ctx.lineTo(sx, sy + w);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawBreathEffect(hx, hy, S, r, col, angle) {
+  ctx.save();
+  ctx.translate(hx, hy);
+  ctx.rotate(angle + Math.PI * 0.1);
+
+  const hs = S * r.head.size;
+  ctx.globalAlpha = 0.4;
+
+  const breathColors = {
+    fire: ['#ff6600','#ffcc00','#ff3300'],
+    water: ['#3399ff','#66bbff','#99ddff'],
+    earth: ['#88cc44','#aadd66','#ccaa55'],
+    electric: ['#ffcc00','#ffffff','#aaddff'],
+    shadow: ['#663399','#aa66cc','#332244'],
+    ice: ['#88ddff','#bbeeFF','#ffffff'],
+    toxic: ['#99cc33','#ccff44','#886699']
+  };
+  const bColors = breathColors[r.type] || ['#fff'];
+
+  for (let i = 0; i < 6; i++) {
+    const t = i / 5;
+    const px = hs * 1.1 + t * S * 0.8 + Math.sin(animT * 0.08 + i) * S * 0.1;
+    const py = hs * 0.1 + Math.sin(animT * 0.1 + i * 0.5) * S * 0.15;
+    const pr = S * (0.05 + t * 0.12);
+    ctx.fillStyle = bColors[i % bColors.length];
+    ctx.globalAlpha = 0.3 * (1 - t);
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ---- UI ----
+function generateLore(recipe) {
+  let lore = pick(LORE_TEMPLATES);
+  lore = lore.replace('TYPE_ADJ', TYPE_ADJ_MAP[recipe.type]);
+  lore = lore.replace('TYPE_FEATURE', TYPE_FEATURE_MAP[recipe.type]);
+  return lore;
+}
+
+function updateUI(recipe) {
+  document.getElementById('name').textContent = recipe.name;
+  const typeEl = document.getElementById('type');
+  typeEl.textContent = recipe.archetype + ' · ' + recipe.type + ' · Lv ' + recipe.level;
+  typeEl.className = 'monster-type type-' + recipe.type;
+  document.getElementById('lore').textContent = generateLore(recipe);
+
+  const statsEl = document.getElementById('stats');
+  statsEl.innerHTML = '';
+  const statColors = { hp: '#e94560', atk: '#ff6633', def: '#3399ff', spd: '#88cc44' };
+  const statLabels = { hp: 'HP', atk: 'ATK', def: 'DEF', spd: 'SPD' };
+  for (const [key, val] of Object.entries(recipe.stats)) {
+    const div = document.createElement('div');
+    div.innerHTML = `<span>${statLabels[key]}: ${val}</span>
+      <div class="stat-bar"><div class="stat-fill" style="width:${(val/120*100).toFixed(0)}%;background:${statColors[key]}"></div></div>`;
+    statsEl.appendChild(div);
+  }
+
+  const movesEl = document.getElementById('moves');
+  movesEl.innerHTML = '';
+  for (const move of recipe.moves) {
+    const div = document.createElement('div');
+    div.className = 'move';
+    div.innerHTML = `<div class="move-name">${move.name}</div><div class="move-dmg">${move.damage} dmg</div>`;
+    movesEl.appendChild(div);
+  }
+}
+
+// ---- MAIN LOOP ----
+let currentRecipe = null;
+
+function animate() {
+  animT++;
+  if (currentRecipe) drawCreature(currentRecipe);
+  requestAnimationFrame(animate);
+}
+
+function generateMonster() {
+  currentRecipe = generateRecipe();
+  updateUI(currentRecipe);
+  drawCreature(currentRecipe);
+}
+
+generateMonster();
+animate();
+</script>
+</body>
+</html>
