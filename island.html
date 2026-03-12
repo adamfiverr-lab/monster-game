@@ -375,6 +375,280 @@ let enemyMonster = null;
 let battleTurn = 'player';
 let battleBusy = false;
 
+// ---- BATTLE ANIMATION STATE ----
+const battleAnim = {
+  playerX: 0, playerY: 0,   // offset from base position
+  enemyX: 0, enemyY: 0,
+  playerFlash: 0,            // 0-1, white flash on hit
+  enemyFlash: 0,
+  playerShake: 0,            // shake intensity
+  enemyShake: 0,
+  cameraZoom: 1,             // zoom punch on big hits
+  impactEffects: [],         // {x,y,type,t,maxT,color}
+  enemySlideIn: 0,           // 0-1, slide in from right on encounter
+  playerSlideIn: 0,
+  enemyDeath: 0,             // 0-1, shrink/fade on death
+};
+
+function resetBattleAnim() {
+  battleAnim.playerX = 0; battleAnim.playerY = 0;
+  battleAnim.enemyX = 0; battleAnim.enemyY = 0;
+  battleAnim.playerFlash = 0; battleAnim.enemyFlash = 0;
+  battleAnim.playerShake = 0; battleAnim.enemyShake = 0;
+  battleAnim.cameraZoom = 1;
+  battleAnim.impactEffects = [];
+  battleAnim.enemySlideIn = 0; battleAnim.playerSlideIn = 0;
+  battleAnim.enemyDeath = 0;
+}
+
+function tweenTo(obj, prop, target, speed) {
+  obj[prop] += (target - obj[prop]) * speed;
+  if (Math.abs(obj[prop] - target) < 0.01) obj[prop] = target;
+}
+
+function updateBattleAnims() {
+  // decay flashes
+  battleAnim.playerFlash *= 0.85;
+  battleAnim.enemyFlash *= 0.85;
+  if (battleAnim.playerFlash < 0.01) battleAnim.playerFlash = 0;
+  if (battleAnim.enemyFlash < 0.01) battleAnim.enemyFlash = 0;
+
+  // decay shakes
+  battleAnim.playerShake *= 0.8;
+  battleAnim.enemyShake *= 0.8;
+
+  // return offsets to 0
+  tweenTo(battleAnim, 'playerX', 0, 0.12);
+  tweenTo(battleAnim, 'playerY', 0, 0.12);
+  tweenTo(battleAnim, 'enemyX', 0, 0.12);
+  tweenTo(battleAnim, 'enemyY', 0, 0.12);
+
+  // camera zoom back to 1
+  tweenTo(battleAnim, 'cameraZoom', 1, 0.08);
+
+  // slide-in
+  if (battleAnim.enemySlideIn < 1) battleAnim.enemySlideIn += 0.04;
+  if (battleAnim.playerSlideIn < 1) battleAnim.playerSlideIn += 0.05;
+
+  // update impact effects
+  battleAnim.impactEffects = battleAnim.impactEffects.filter(e => {
+    e.t++;
+    return e.t < e.maxT;
+  });
+}
+
+function triggerAttackAnim(attacker, moveType) {
+  const lungeX = W * 0.12;
+  if (attacker === 'player') {
+    battleAnim.playerX = lungeX;  // lunge right toward enemy
+    battleAnim.playerY = -8;
+    // delay hit effect
+    setTimeout(() => {
+      battleAnim.enemyFlash = 1;
+      battleAnim.enemyShake = 8;
+      battleAnim.cameraZoom = 1.04;
+      spawnImpactEffect(W * 0.62, H * 0.42, moveType);
+    }, 120);
+  } else {
+    battleAnim.enemyX = -lungeX;
+    battleAnim.enemyY = -6;
+    setTimeout(() => {
+      battleAnim.playerFlash = 1;
+      battleAnim.playerShake = 8;
+      battleAnim.cameraZoom = 1.04;
+      spawnImpactEffect(W * 0.22, H * 0.52, moveType);
+    }, 120);
+  }
+}
+
+function spawnImpactEffect(x, y, type) {
+  const colors = {
+    fire: ['#ff6600','#ffcc00','#ff3300'],
+    water: ['#3399ff','#66bbff','#ffffff'],
+    earth: ['#88cc44','#ccaa55','#887744'],
+    electric: ['#ffee00','#ffffff','#aaddff'],
+    shadow: ['#aa66cc','#663399','#4411aa'],
+    ice: ['#88ddff','#ffffff','#bbddff'],
+    toxic: ['#99cc33','#ccff44','#667722']
+  };
+  const c = colors[type] || colors.earth;
+
+  // slash lines
+  for (let i = 0; i < 3; i++) {
+    const angle = -0.5 + Math.random() * 1;
+    battleAnim.impactEffects.push({
+      x, y, type: 'slash', t: 0, maxT: 18,
+      angle, len: 20 + Math.random() * 25,
+      color: c[i % c.length]
+    });
+  }
+
+  // burst particles
+  for (let i = 0; i < 10; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    battleAnim.impactEffects.push({
+      x, y, type: 'particle', t: 0, maxT: 22 + Math.random() * 10,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      size: 2 + Math.random() * 4,
+      color: c[Math.floor(Math.random() * c.length)]
+    });
+  }
+
+  // type-specific
+  if (type === 'fire') {
+    for (let i = 0; i < 6; i++) {
+      battleAnim.impactEffects.push({
+        x: x + (Math.random()-0.5)*30, y: y + (Math.random()-0.5)*20,
+        type: 'flame', t: 0, maxT: 25,
+        size: 8 + Math.random() * 12,
+        color: i%2 ? '#ffcc00' : '#ff4400'
+      });
+    }
+  } else if (type === 'electric') {
+    for (let i = 0; i < 4; i++) {
+      battleAnim.impactEffects.push({
+        x, y, type: 'lightning', t: 0, maxT: 12,
+        points: generateLightningBolt(x, y - 40, x + (Math.random()-0.5)*50, y + 20),
+        color: '#ffee44'
+      });
+    }
+  } else if (type === 'water') {
+    for (let i = 0; i < 8; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      battleAnim.impactEffects.push({
+        x, y, type: 'droplet', t: 0, maxT: 28,
+        vx: Math.cos(angle) * (1+Math.random()*3),
+        vy: Math.sin(angle) * 3 - 4,
+        size: 3 + Math.random() * 4,
+        color: c[Math.floor(Math.random()*c.length)]
+      });
+    }
+  } else if (type === 'shadow') {
+    battleAnim.impactEffects.push({
+      x, y, type: 'voidCircle', t: 0, maxT: 30,
+      size: 35, color: '#663399'
+    });
+  } else if (type === 'ice') {
+    for (let i = 0; i < 5; i++) {
+      battleAnim.impactEffects.push({
+        x: x + (Math.random()-0.5)*40, y: y + (Math.random()-0.5)*30,
+        type: 'crystal', t: 0, maxT: 30,
+        size: 6 + Math.random() * 10,
+        angle: Math.random() * Math.PI,
+        color: c[i%c.length]
+      });
+    }
+  }
+}
+
+function generateLightningBolt(x1, y1, x2, y2) {
+  const pts = [{x:x1, y:y1}];
+  const segments = 5;
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    pts.push({
+      x: lerp(x1, x2, t) + (Math.random()-0.5) * 25,
+      y: lerp(y1, y2, t) + (Math.random()-0.5) * 10
+    });
+  }
+  pts.push({x:x2, y:y2});
+  return pts;
+}
+
+function drawImpactEffects() {
+  for (const e of battleAnim.impactEffects) {
+    const progress = e.t / e.maxT;
+    const alpha = 1 - progress;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    switch (e.type) {
+      case 'slash': {
+        ctx.strokeStyle = e.color;
+        ctx.lineWidth = 3 * (1 - progress);
+        ctx.lineCap = 'round';
+        const ext = e.len * Math.min(1, e.t / 5);
+        ctx.beginPath();
+        ctx.moveTo(e.x - Math.cos(e.angle) * ext * 0.5, e.y - Math.sin(e.angle) * ext * 0.5);
+        ctx.lineTo(e.x + Math.cos(e.angle) * ext * 0.5, e.y + Math.sin(e.angle) * ext * 0.5);
+        ctx.stroke();
+        break;
+      }
+      case 'particle': {
+        e.x += e.vx; e.y += e.vy; e.vy += 0.15;
+        ctx.fillStyle = e.color;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.size * (1 - progress * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'flame': {
+        const s = e.size * (1 - progress * 0.7);
+        const fy = e.y - e.t * 1.5;
+        ctx.fillStyle = e.color;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(e.x, fy - s);
+        ctx.quadraticCurveTo(e.x + s * 0.6, fy - s * 0.3, e.x + s * 0.3, fy + s * 0.5);
+        ctx.quadraticCurveTo(e.x, fy + s * 0.2, e.x - s * 0.3, fy + s * 0.5);
+        ctx.quadraticCurveTo(e.x - s * 0.6, fy - s * 0.3, e.x, fy - s);
+        ctx.fill();
+        break;
+      }
+      case 'lightning': {
+        ctx.strokeStyle = e.color;
+        ctx.lineWidth = 2.5 * (1 - progress);
+        ctx.shadowColor = e.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        e.points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        break;
+      }
+      case 'droplet': {
+        e.x += e.vx; e.y += e.vy; e.vy += 0.2;
+        ctx.fillStyle = e.color;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.beginPath();
+        ctx.ellipse(e.x, e.y, e.size * 0.6, e.size, 0, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'voidCircle': {
+        const r = e.size * progress;
+        const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, r);
+        grad.addColorStop(0, e.color + '88');
+        grad.addColorStop(0.6, e.color + '44');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'crystal': {
+        const s = e.size * (1 - progress * 0.3);
+        ctx.fillStyle = e.color;
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        ctx.rotate(e.angle);
+        ctx.beginPath();
+        ctx.moveTo(0, -s); ctx.lineTo(s*0.35, 0); ctx.lineTo(0, s*0.6); ctx.lineTo(-s*0.35, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+    }
+    ctx.restore();
+  }
+}
+
 // ---- BIOME CONFIGS ----
 const BIOMES = {
   beach: {
@@ -488,10 +762,108 @@ function drawScene() {
   // Walking character
   if(gameState==='walking') drawWalker(groundY);
 
-  // Battle creatures
+  // Battle creatures with 2.5D animations
   if(gameState==='battle' || gameState==='encounter') {
-    if(enemyMonster) drawCreatureOnScene(enemyMonster, W*0.65, groundY - 10, 0.55, false);
-    if(gameState==='battle') drawCreatureOnScene(playerMonster, W*0.2, groundY + 5, 0.4, true);
+    // 2.5D battle arena ground plane
+    if(gameState==='battle') {
+      ctx.save();
+      // perspective ground shadow/gradient
+      const arenaY = groundY - 5;
+      const arenaGrad = ctx.createLinearGradient(0, arenaY, 0, arenaY + 40);
+      arenaGrad.addColorStop(0, 'rgba(0,0,0,0.15)');
+      arenaGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = arenaGrad;
+      ctx.beginPath();
+      ctx.ellipse(W*0.5, arenaY + 5, W*0.55, 25, 0, 0, Math.PI*2);
+      ctx.fill();
+      // ground line
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(W*0.5, arenaY + 5, W*0.55, 25, 0, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+
+      // camera zoom
+      if(battleAnim.cameraZoom !== 1) {
+        ctx.save();
+        ctx.translate(W/2, H*0.5);
+        ctx.scale(battleAnim.cameraZoom, battleAnim.cameraZoom);
+        ctx.translate(-W/2, -H*0.5);
+      }
+    }
+
+    // Enemy creature with animation offsets
+    if(enemyMonster) {
+      const eSlide = gameState==='encounter' ? 0.5 : Math.min(1, battleAnim.enemySlideIn);
+      const eBaseX = W*0.65;
+      const eBaseY = groundY - 10;
+      const eOffX = (1 - eSlide) * W * 0.5; // slide in from right
+      const eShakeX = battleAnim.enemyShake ? (Math.random()-0.5) * battleAnim.enemyShake : 0;
+      const eShakeY = battleAnim.enemyShake ? (Math.random()-0.5) * battleAnim.enemyShake * 0.5 : 0;
+      const eDeath = battleAnim.enemyDeath;
+
+      ctx.save();
+      if(eDeath > 0) {
+        ctx.globalAlpha = 1 - eDeath;
+        ctx.translate(eBaseX + battleAnim.enemyX + eOffX + eShakeX, eBaseY + battleAnim.enemyY + eShakeY + eDeath * 20);
+        ctx.scale(1 - eDeath * 0.5, 1 - eDeath * 0.5);
+        ctx.translate(-(eBaseX + battleAnim.enemyX + eOffX + eShakeX), -(eBaseY + battleAnim.enemyY + eShakeY + eDeath * 20));
+      }
+
+      drawCreatureOnScene(enemyMonster,
+        eBaseX + battleAnim.enemyX + eOffX + eShakeX,
+        eBaseY + battleAnim.enemyY + eShakeY + (eDeath > 0 ? eDeath * 20 : 0),
+        0.55, false);
+
+      // white flash overlay on hit
+      if(battleAnim.enemyFlash > 0.05) {
+        ctx.globalAlpha = battleAnim.enemyFlash * 0.6;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(eBaseX + battleAnim.enemyX + eOffX, eBaseY - 15, 40, 50, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      ctx.restore();
+    }
+
+    // Player creature with animation offsets
+    if(gameState==='battle') {
+      const pSlide = Math.min(1, battleAnim.playerSlideIn);
+      const pBaseX = W*0.2;
+      const pBaseY = groundY + 5;
+      const pOffX = (1 - pSlide) * -W * 0.4; // slide in from left
+      const pShakeX = battleAnim.playerShake ? (Math.random()-0.5) * battleAnim.playerShake : 0;
+      const pShakeY = battleAnim.playerShake ? (Math.random()-0.5) * battleAnim.playerShake * 0.5 : 0;
+
+      ctx.save();
+      drawCreatureOnScene(playerMonster,
+        pBaseX + battleAnim.playerX + pOffX + pShakeX,
+        pBaseY + battleAnim.playerY + pShakeY,
+        0.4, true);
+
+      // white flash overlay on hit
+      if(battleAnim.playerFlash > 0.05) {
+        ctx.globalAlpha = battleAnim.playerFlash * 0.6;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(pBaseX + battleAnim.playerX + pOffX, pBaseY - 10, 30, 40, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      ctx.restore();
+    }
+
+    // Draw impact effects on top of creatures
+    drawImpactEffects();
+
+    // restore camera zoom
+    if(gameState==='battle' && battleAnim.cameraZoom !== 1) {
+      ctx.restore();
+    }
   }
 
   // Atmospheric overlay (vignette)
@@ -1161,6 +1533,11 @@ function startBattle() {
   battleTurn = 'player';
   playerMonster.currentHP = playerMonster.stats.hp; // heal for demo
 
+  // init battle animations — slide in from offscreen
+  resetBattleAnim();
+  battleAnim.enemySlideIn = 0;
+  battleAnim.playerSlideIn = 0;
+
   // switch UI
   document.body.classList.add('in-battle');
   exploreUI.style.display = 'none';
@@ -1220,12 +1597,13 @@ function playerAttack(moveIdx) {
   const variance = 0.85 + Math.random() * 0.3;
   const dmg = Math.max(1, Math.floor(baseDmg * atkMod * (1 - defMod * 0.5) * variance));
 
+  // trigger attack animation
+  triggerAttackAnim('player', move.type);
+
   enemyMonster.currentHP -= dmg;
   updateBattleUI();
 
-  // shake + float
-  sceneCanvas.parentElement.classList.add('shake');
-  setTimeout(() => sceneCanvas.parentElement.classList.remove('shake'), 300);
+  // damage float
   showDmgFloat(dmg, W*0.65, H*0.3);
 
   const log = document.getElementById('battleLog');
@@ -1233,7 +1611,15 @@ function playerAttack(moveIdx) {
   log.className = 'hit';
 
   if(enemyMonster.currentHP <= 0) {
-    setTimeout(() => endBattle('victory'), 600);
+    // death animation — shrink/fade
+    const deathAnim = setInterval(() => {
+      battleAnim.enemyDeath += 0.04;
+      if(battleAnim.enemyDeath >= 1) {
+        clearInterval(deathAnim);
+        battleAnim.enemyDeath = 1;
+      }
+    }, 30);
+    setTimeout(() => endBattle('victory'), 800);
     return;
   }
 
@@ -1245,11 +1631,11 @@ function playerAttack(moveIdx) {
     const eVar = 0.85 + Math.random() * 0.3;
     const eDmg = Math.max(1, Math.floor(eMove.damage * eAtkMod * (1 - eDefMod * 0.5) * eVar));
 
+    triggerAttackAnim('enemy', eMove.type);
+
     playerMonster.currentHP -= eDmg;
     updateBattleUI();
 
-    sceneCanvas.parentElement.classList.add('shake');
-    setTimeout(() => sceneCanvas.parentElement.classList.remove('shake'), 300);
     showDmgFloat(eDmg, W*0.2, H*0.45);
 
     log.textContent = `${enemyMonster.name} used ${eMove.name}! -${eDmg} HP`;
@@ -1338,6 +1724,9 @@ function loop() {
   animT++;
   if(gameState === 'walking') {
     walkProgress += 0.003;
+  }
+  if(gameState === 'battle' || gameState === 'encounter') {
+    updateBattleAnims();
   }
   drawScene();
   requestAnimationFrame(loop);
