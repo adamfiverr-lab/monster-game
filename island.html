@@ -261,18 +261,12 @@
   @keyframes shake {
     0%,100%{transform:translate(0)} 20%{transform:translate(-4px,2px)} 40%{transform:translate(4px,-2px)} 60%{transform:translate(-3px,3px)} 80%{transform:translate(3px,-1px)}
   }
-  #scene3d {
-    display:none; width:100%; height:100%;
-    position:absolute; top:0; left:0; z-index:1;
-  }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
 <div id="sceneWrap">
   <canvas id="scene"></canvas>
-  <canvas id="scene3d"></canvas>
   <div id="flash"></div>
   <div id="zoneBadge">Verdantia — Forest</div>
   <div id="hpOverlay">
@@ -347,7 +341,7 @@ function resizeCanvas(){
   ctx.setTransform(r,0,0,r,0,0);
 }
 resizeCanvas();
-window.addEventListener('resize', () => { resizeCanvas(); resize3D(); });
+window.addEventListener('resize', resizeCanvas);
 
 // ---- GAME STATE ----
 let gameState = 'explore'; // 'explore' | 'walking' | 'encounter' | 'battle'
@@ -381,828 +375,278 @@ let enemyMonster = null;
 let battleTurn = 'player';
 let battleBusy = false;
 
-// ---- THREE.JS 3D BATTLE SYSTEM ----
-const scene3dCanvas = document.getElementById('scene3d');
-let renderer3d, scene3d, camera3d;
-let playerMesh, enemyMesh;
-let arenaLights = [];
-let battleParticles3d = [];
-let impactLights = [];
-
-// 3D animation state
-const b3d = {
-  playerBasePos: new THREE.Vector3(-2.2, 0, 1.8),
-  enemyBasePos: new THREE.Vector3(2.2, 0, -0.8),
-  playerTargetPos: null,
-  enemyTargetPos: null,
-  playerShake: 0,
-  enemyShake: 0,
-  playerFlash: 0,
+// ---- BATTLE ANIMATION STATE ----
+const battleAnim = {
+  playerX: 0, playerY: 0,   // offset from base position
+  enemyX: 0, enemyY: 0,
+  playerFlash: 0,            // 0-1, white flash on hit
   enemyFlash: 0,
-  cameraShake: 0,
-  enemySlideProgress: 0,
-  playerSlideProgress: 0,
-  enemyDeathProgress: 0,
-  originalMaterials: new Map(),
-  clock: new THREE.Clock(),
+  playerShake: 0,            // shake intensity
+  enemyShake: 0,
+  cameraZoom: 1,             // zoom punch on big hits
+  impactEffects: [],         // {x,y,type,t,maxT,color}
+  enemySlideIn: 0,           // 0-1, slide in from right on encounter
+  playerSlideIn: 0,
+  enemyDeath: 0,             // 0-1, shrink/fade on death
 };
 
-function init3DRenderer() {
-  if (renderer3d) return;
-  renderer3d = new THREE.WebGLRenderer({
-    canvas: scene3dCanvas,
-    antialias: true,
-    alpha: false,
-    powerPreference: 'high-performance'
+function resetBattleAnim() {
+  battleAnim.playerX = 0; battleAnim.playerY = 0;
+  battleAnim.enemyX = 0; battleAnim.enemyY = 0;
+  battleAnim.playerFlash = 0; battleAnim.enemyFlash = 0;
+  battleAnim.playerShake = 0; battleAnim.enemyShake = 0;
+  battleAnim.cameraZoom = 1;
+  battleAnim.impactEffects = [];
+  battleAnim.enemySlideIn = 0; battleAnim.playerSlideIn = 0;
+  battleAnim.enemyDeath = 0;
+}
+
+function tweenTo(obj, prop, target, speed) {
+  obj[prop] += (target - obj[prop]) * speed;
+  if (Math.abs(obj[prop] - target) < 0.01) obj[prop] = target;
+}
+
+function updateBattleAnims() {
+  // decay flashes
+  battleAnim.playerFlash *= 0.85;
+  battleAnim.enemyFlash *= 0.85;
+  if (battleAnim.playerFlash < 0.01) battleAnim.playerFlash = 0;
+  if (battleAnim.enemyFlash < 0.01) battleAnim.enemyFlash = 0;
+
+  // decay shakes
+  battleAnim.playerShake *= 0.8;
+  battleAnim.enemyShake *= 0.8;
+
+  // return offsets to 0
+  tweenTo(battleAnim, 'playerX', 0, 0.12);
+  tweenTo(battleAnim, 'playerY', 0, 0.12);
+  tweenTo(battleAnim, 'enemyX', 0, 0.12);
+  tweenTo(battleAnim, 'enemyY', 0, 0.12);
+
+  // camera zoom back to 1
+  tweenTo(battleAnim, 'cameraZoom', 1, 0.08);
+
+  // slide-in
+  if (battleAnim.enemySlideIn < 1) battleAnim.enemySlideIn += 0.04;
+  if (battleAnim.playerSlideIn < 1) battleAnim.playerSlideIn += 0.05;
+
+  // update impact effects
+  battleAnim.impactEffects = battleAnim.impactEffects.filter(e => {
+    e.t++;
+    return e.t < e.maxT;
   });
-  renderer3d.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer3d.setClearColor(0x0a0e18);
-  renderer3d.shadowMap.enabled = false;
-  renderer3d.outputEncoding = THREE.sRGBEncoding;
 }
 
-function resize3D() {
-  if (!renderer3d) return;
-  const rect = scene3dCanvas.parentElement.getBoundingClientRect();
-  renderer3d.setSize(rect.width, rect.height);
-  if (camera3d) {
-    camera3d.aspect = rect.width / rect.height;
-    camera3d.updateProjectionMatrix();
+function triggerAttackAnim(attacker, moveType) {
+  const lungeX = W * 0.12;
+  if (attacker === 'player') {
+    battleAnim.playerX = lungeX;  // lunge right toward enemy
+    battleAnim.playerY = -8;
+    // delay hit effect
+    setTimeout(() => {
+      battleAnim.enemyFlash = 1;
+      battleAnim.enemyShake = 8;
+      battleAnim.cameraZoom = 1.04;
+      spawnImpactEffect(W * 0.62, H * 0.42, moveType);
+    }, 120);
+  } else {
+    battleAnim.enemyX = -lungeX;
+    battleAnim.enemyY = -6;
+    setTimeout(() => {
+      battleAnim.playerFlash = 1;
+      battleAnim.playerShake = 8;
+      battleAnim.cameraZoom = 1.04;
+      spawnImpactEffect(W * 0.22, H * 0.52, moveType);
+    }, 120);
   }
 }
 
-function hexToThreeColor(hex) {
-  return new THREE.Color(hex);
-}
-
-function makeMonsterMat(hex, flat) {
-  return new THREE.MeshPhongMaterial({
-    color: hexToThreeColor(hex),
-    flatShading: flat !== false,
-    shininess: 18,
-    specular: 0x222222,
-  });
-}
-
-function makeEmissiveMat(hex, intensity) {
-  return new THREE.MeshPhongMaterial({
-    color: hexToThreeColor(hex),
-    emissive: hexToThreeColor(hex),
-    emissiveIntensity: intensity || 0.7,
-    flatShading: true,
-  });
-}
-
-// ---- PROCEDURAL 3D MONSTER BUILDER ----
-function buildMonsterMesh(data) {
-  const g = new THREE.Group();
-  const col = data.colors;
-  const S = (data.body?.size || 0.9);
-  const bulk = (data.body?.bulk || 1);
-  const skinMat = makeMonsterMat(col.skin);
-  const darkMat = makeMonsterMat(col.dark);
-  const priMat = makeMonsterMat(col.pri);
-  const bellyMat = makeMonsterMat(lighten(col.skin, 0.2));
-
-  // Body
-  const bodySeg = 6;
-  const bodyGeo = new THREE.SphereGeometry(1, bodySeg, bodySeg - 1);
-  const body = new THREE.Mesh(bodyGeo, skinMat);
-  body.scale.set(S * 1.1, S * 0.7 * bulk, S * 0.75);
-  body.position.set(0, S * 0.7, 0);
-  g.add(body);
-
-  // Belly highlight
-  const bellyGeo = new THREE.SphereGeometry(0.7, 5, 4, 0, Math.PI * 2, Math.PI * 0.4, Math.PI * 0.4);
-  const belly = new THREE.Mesh(bellyGeo, bellyMat);
-  belly.scale.copy(body.scale).multiplyScalar(0.85);
-  belly.position.copy(body.position);
-  belly.position.y -= S * 0.1;
-  g.add(belly);
-
-  // Neck
-  const nLen = (data.neck?.length || 0.5) * 1.5 * S;
-  const nThick = (data.neck?.thick || 0.3) * S;
-  const neckGeo = new THREE.CylinderGeometry(nThick * 0.6, nThick, nLen, 5, 1);
-  const neck = new THREE.Mesh(neckGeo, skinMat);
-  neck.position.set(-S * 0.7, S * 0.9 + nLen * 0.35, 0);
-  neck.rotation.z = 0.5;
-  g.add(neck);
-
-  // Head
-  const headGroup = new THREE.Group();
-  const hs = (data.head?.size || 0.9) * S;
-  const shape = data.head?.shape || 'dragon';
-
-  // Cranium
-  const cranGeo = new THREE.SphereGeometry(hs * 0.55, 5, 4);
-  const cran = new THREE.Mesh(cranGeo, skinMat);
-  cran.scale.set(1, 0.8, 0.9);
-  headGroup.add(cran);
-
-  // Snout
-  const snoutLen = shape === 'raptor' ? hs * 0.9 : shape === 'flat' ? hs * 0.4 : hs * 0.7;
-  const snoutGeo = new THREE.ConeGeometry(hs * 0.3, snoutLen, 5);
-  const snout = new THREE.Mesh(snoutGeo, skinMat);
-  snout.rotation.z = Math.PI / 2;
-  snout.position.set(-snoutLen * 0.5, -hs * 0.05, 0);
-  headGroup.add(snout);
-
-  // Jaw
-  const jawGeo = new THREE.BoxGeometry(snoutLen * 0.7, hs * 0.15, hs * 0.35);
-  const jaw = new THREE.Mesh(jawGeo, new THREE.MeshPhongMaterial({
-    color: hexToThreeColor(darken(col.skin, 0.1)),
-    flatShading: true, shininess: 12
-  }));
-  jaw.position.set(-snoutLen * 0.25, -hs * 0.25, 0);
-  headGroup.add(jaw);
-
-  // Eyes
-  const eyeMat = data.eyeGlow ? makeEmissiveMat(col.hi, 0.9) : makeMonsterMat('#ddddaa');
-  const pupilMat = new THREE.MeshPhongMaterial({ color: 0x111111, flatShading: true });
-  [-1, 1].forEach(side => {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(hs * 0.12, 5, 4), eyeMat);
-    eye.position.set(-hs * 0.05, hs * 0.12, side * hs * 0.3);
-    headGroup.add(eye);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(hs * 0.05, 4, 3), pupilMat);
-    pupil.position.set(-hs * 0.14, hs * 0.12, side * hs * 0.32);
-    headGroup.add(pupil);
-  });
-
-  // Fangs
-  if (data.fangs) {
-    const fangMat = makeMonsterMat('#eee8dd');
-    [0.15, -0.15, 0].forEach((z, i) => {
-      const fLen = i === 2 ? hs * 0.2 : hs * 0.14;
-      const fang = new THREE.Mesh(new THREE.ConeGeometry(hs * 0.04, fLen, 4), fangMat);
-      fang.position.set(-snoutLen * 0.3, -hs * 0.35, z);
-      fang.rotation.x = Math.PI;
-      headGroup.add(fang);
-    });
-  }
-
-  // Horns
-  if (data.horns?.style && data.horns.style !== 'none') {
-    const hornMat = makeMonsterMat(darken(col.skin, 0.3));
-    const hornSize = (data.horns.size || 0.7) * hs;
-    [-1, 1].forEach(side => {
-      const horn = new THREE.Mesh(new THREE.ConeGeometry(hornSize * 0.12, hornSize * 0.8, 5), hornMat);
-      if (data.horns.style === 'curved') {
-        horn.position.set(hs * 0.1, hs * 0.35, side * hs * 0.25);
-        horn.rotation.z = side * 0.4;
-        horn.rotation.x = side * 0.3;
-      } else if (data.horns.style === 'ram') {
-        horn.position.set(hs * 0.05, hs * 0.25, side * hs * 0.35);
-        horn.rotation.z = side * 0.8;
-      } else {
-        horn.position.set(hs * 0.1, hs * 0.4, side * hs * 0.2);
-        horn.rotation.z = side * 0.2;
-      }
-      headGroup.add(horn);
-    });
-  }
-
-  headGroup.position.set(-S * 0.7 + Math.cos(0.5) * nLen * 0.7, S * 0.9 + nLen * 0.35 + Math.sin(0.5) * nLen * 0.5, 0);
-  headGroup.rotation.z = 0.2;
-  g.add(headGroup);
-
-  // Legs
-  const legCount = data.legs?.count || 0;
-  const clawMat = makeMonsterMat(darken(col.skin, 0.2));
-  if (legCount >= 2) {
-    const legPositions = legCount === 4
-      ? [[-S*0.5, 0, S*0.4], [-S*0.5, 0, -S*0.4], [S*0.5, 0, S*0.35], [S*0.5, 0, -S*0.35]]
-      : [[-S*0.15, 0, S*0.4], [-S*0.15, 0, -S*0.4]];
-
-    legPositions.forEach(([lx, ly, lz], i) => {
-      const legGroup = new THREE.Group();
-      const legThick = S * 0.16;
-      const legLen = S * 0.65;
-
-      // upper leg
-      const upperGeo = new THREE.CylinderGeometry(legThick * 0.7, legThick, legLen * 0.55, 5);
-      const upper = new THREE.Mesh(upperGeo, i >= 2 ? makeMonsterMat(darken(col.skin, 0.1)) : skinMat);
-      upper.position.y = -legLen * 0.25;
-      legGroup.add(upper);
-
-      // lower leg
-      const digi = data.legs?.style === 'digitigrade';
-      const lowerGeo = new THREE.CylinderGeometry(legThick * 0.45, legThick * 0.65, legLen * 0.5, 5);
-      const lower = new THREE.Mesh(lowerGeo, skinMat);
-      lower.position.set(digi ? S*0.1 : 0, -legLen * 0.6, 0);
-      if (digi) lower.rotation.z = -0.3;
-      legGroup.add(lower);
-
-      // foot
-      const footGeo = new THREE.BoxGeometry(S * 0.18, S * 0.06, S * 0.22);
-      const foot = new THREE.Mesh(footGeo, skinMat);
-      foot.position.set(digi ? S*0.15 : 0, -legLen * 0.82, 0);
-      legGroup.add(foot);
-
-      // claws
-      for (let c = -1; c <= 1; c++) {
-        const claw = new THREE.Mesh(new THREE.ConeGeometry(S * 0.025, S * 0.1, 4), clawMat);
-        claw.position.set((digi ? S*0.15 : 0) - S*0.06, -legLen * 0.88, c * S * 0.07);
-        claw.rotation.z = 0.6;
-        legGroup.add(claw);
-      }
-
-      legGroup.position.set(lx, S * 0.5, lz);
-      g.add(legGroup);
-    });
-  }
-
-  // Wings
-  if (data.wings?.style && data.wings.style !== 'none') {
-    const wingSpan = (data.wings.span || 1) * S * 2;
-    const isSkeletal = data.wings.style === 'skeletal';
-    const isFeathered = data.wings.style === 'feathered';
-
-    [-1, 1].forEach(side => {
-      const wingGroup = new THREE.Group();
-
-      // wing arm bones
-      const boneMat = makeMonsterMat(col.skin);
-      const bone1 = new THREE.Mesh(new THREE.CylinderGeometry(S * 0.04, S * 0.06, wingSpan * 0.4, 4), boneMat);
-      bone1.rotation.z = side * 1.2;
-      bone1.position.set(0, wingSpan * 0.15, 0);
-      wingGroup.add(bone1);
-
-      const bone2 = new THREE.Mesh(new THREE.CylinderGeometry(S * 0.03, S * 0.04, wingSpan * 0.35, 4), boneMat);
-      bone2.position.set(side * wingSpan * 0.28, wingSpan * 0.25, 0);
-      bone2.rotation.z = side * 0.5;
-      wingGroup.add(bone2);
-
-      // membrane or feathers
-      if (!isSkeletal) {
-        const memShape = new THREE.Shape();
-        memShape.moveTo(0, 0);
-        memShape.lineTo(side * wingSpan * 0.15, wingSpan * 0.3);
-        memShape.lineTo(side * wingSpan * 0.4, wingSpan * 0.2);
-        memShape.lineTo(side * wingSpan * 0.38, wingSpan * 0.05);
-        memShape.lineTo(side * wingSpan * 0.25, -wingSpan * 0.05);
-        memShape.lineTo(0, -wingSpan * 0.02);
-        const memGeo = new THREE.ShapeGeometry(memShape);
-        const memMat = new THREE.MeshPhongMaterial({
-          color: hexToThreeColor(col.pri),
-          flatShading: true,
-          transparent: true,
-          opacity: isFeathered ? 0.85 : 0.5,
-          side: THREE.DoubleSide,
-          shininess: 8,
-        });
-        const membrane = new THREE.Mesh(memGeo, memMat);
-        wingGroup.add(membrane);
-      }
-
-      // finger bones
-      for (let f = 0; f < 3; f++) {
-        const fBone = new THREE.Mesh(new THREE.CylinderGeometry(S*0.015, S*0.025, wingSpan*0.15, 4), boneMat);
-        fBone.position.set(side * (wingSpan*0.3 + f*wingSpan*0.05), wingSpan*(0.2 - f*0.06), 0);
-        fBone.rotation.z = side * (0.8 + f * 0.3);
-        wingGroup.add(fBone);
-      }
-
-      wingGroup.position.set(0, S * 0.9, side * S * 0.3);
-      wingGroup.rotation.x = side * 0.15;
-      g.add(wingGroup);
-    });
-  }
-
-  // Tail
-  const tailLen = (data.tail?.length || 1) * S * 1.5;
-  const tailThick = (data.tail?.thick || 0.25) * S;
-  const tailSegs = 6;
-  for (let i = 0; i < tailSegs; i++) {
-    const t = i / tailSegs;
-    const segSize = tailThick * (1 - t * 0.8);
-    const segGeo = new THREE.SphereGeometry(segSize, 4, 3);
-    const seg = new THREE.Mesh(segGeo, skinMat);
-    const curve = Math.sin(t * Math.PI) * tailLen * 0.12;
-    seg.position.set(S * 0.8 + t * tailLen * 0.8, S * 0.4 - t * S * 0.15 + curve, Math.sin(t * 3) * S * 0.1);
-    g.add(seg);
-  }
-
-  // Tail tip
-  const tipStyle = data.tail?.style || 'whip';
-  if (tipStyle === 'spiked' || tipStyle === 'bladed' || tipStyle === 'barbed') {
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(tailThick * 0.5, tailThick * 2, 4), priMat);
-    tip.position.set(S * 0.8 + tailLen * 0.85, S * 0.25, 0);
-    tip.rotation.z = -Math.PI / 2;
-    g.add(tip);
-  } else if (tipStyle === 'club') {
-    const club = new THREE.Mesh(new THREE.SphereGeometry(tailThick * 0.8, 5, 4), priMat);
-    club.position.set(S * 0.8 + tailLen * 0.85, S * 0.25, 0);
-    g.add(club);
-  } else if (tipStyle === 'flame') {
-    const flameTip = new THREE.Mesh(new THREE.ConeGeometry(tailThick * 0.4, tailThick * 1.5, 5),
-      makeEmissiveMat(col.hi, 0.6));
-    flameTip.position.set(S * 0.8 + tailLen * 0.85, S * 0.25, 0);
-    flameTip.rotation.z = -Math.PI / 2;
-    g.add(flameTip);
-  }
-
-  // Spines along back
-  if (data.spines) {
-    for (let i = 0; i < 6; i++) {
-      const t = i / 5;
-      const sx = -S * 0.5 + t * S * 1.4;
-      const sy = S * (0.9 + Math.sin(t * Math.PI) * 0.3 * bulk);
-      const spineH = S * (0.12 + Math.sin(t * Math.PI) * 0.15);
-      const spine = new THREE.Mesh(new THREE.ConeGeometry(S * 0.04, spineH, 4), priMat);
-      spine.position.set(sx, sy, 0);
-      g.add(spine);
-    }
-  }
-
-  // Ground shadow disc
-  const shadowGeo = new THREE.CircleGeometry(S * 1.5, 16);
-  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
-  const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.02;
-  g.add(shadow);
-
-  return g;
-}
-
-// ---- 3D ARENA ----
-function buildBattleArena(biome) {
-  scene3d = new THREE.Scene();
-  scene3d.fog = new THREE.FogExp2(0x0a0e18, biome === 'deepwoods' ? 0.14 : biome === 'cave' ? 0.1 : 0.06);
-
-  // ground
-  const groundColors = { beach: 0x9e8560, forest: 0x2a4a1a, deepwoods: 0x1a2e12, cave: 0x1a1a22 };
-  const groundGeo = new THREE.CircleGeometry(8, 32);
-  const groundMat = new THREE.MeshPhongMaterial({
-    color: groundColors[biome] || 0x2a4a1a,
-    flatShading: true, shininess: 5,
-  });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene3d.add(ground);
-
-  // ground ring markings
-  for (let i = 1; i <= 3; i++) {
-    const ringGeo = new THREE.RingGeometry(i * 2 - 0.05, i * 2 + 0.05, 32);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.04, side: THREE.DoubleSide,
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.01;
-    scene3d.add(ring);
-  }
-
-  // Ambient
-  const ambient = new THREE.AmbientLight(0x334455, biome === 'cave' ? 0.25 : 0.4);
-  scene3d.add(ambient);
-  arenaLights.push(ambient);
-
-  // Key light
-  const key = new THREE.DirectionalLight(0xffeedd, biome === 'cave' ? 0.35 : 0.7);
-  key.position.set(-4, 6, 3);
-  scene3d.add(key);
-  arenaLights.push(key);
-
-  // Fill light (cool)
-  const fill = new THREE.DirectionalLight(0x6688bb, 0.2);
-  fill.position.set(3, 4, -2);
-  scene3d.add(fill);
-  arenaLights.push(fill);
-
-  // Rim light from behind
-  const rim = new THREE.DirectionalLight(0xffffff, 0.15);
-  rim.position.set(0, 2, -5);
-  scene3d.add(rim);
-
-  // Biome-specific atmosphere
-  if (biome === 'cave') {
-    // crystal point lights
-    const crystalColors = [0x4488cc, 0x66aadd, 0x5599bb, 0x88bbee];
-    for (let i = 0; i < 4; i++) {
-      const cl = new THREE.PointLight(crystalColors[i], 0.3, 6);
-      const angle = (i / 4) * Math.PI * 2;
-      cl.position.set(Math.cos(angle) * 5, 0.5, Math.sin(angle) * 5);
-      scene3d.add(cl);
-      // crystal mesh
-      const crystGeo = new THREE.OctahedronGeometry(0.2 + Math.random() * 0.2, 0);
-      const crystMat = makeEmissiveMat('#' + crystalColors[i].toString(16).padStart(6, '0'), 0.5);
-      const cryst = new THREE.Mesh(crystGeo, crystMat);
-      cryst.position.copy(cl.position);
-      cryst.position.y = 0.1;
-      cryst.scale.y = 2;
-      scene3d.add(cryst);
-    }
-  } else if (biome === 'forest' || biome === 'deepwoods') {
-    // distant tree silhouettes
-    const treeMat = new THREE.MeshPhongMaterial({
-      color: biome === 'deepwoods' ? 0x0a1a0a : 0x1a3a18,
-      flatShading: true, shininess: 0,
-    });
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.3;
-      const dist = 5.5 + Math.random() * 2;
-      const treeH = 2 + Math.random() * 2;
-      // trunk
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, treeH * 0.6, 4), treeMat);
-      trunk.position.set(Math.cos(angle) * dist, treeH * 0.3, Math.sin(angle) * dist);
-      scene3d.add(trunk);
-      // canopy
-      const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.5 + Math.random() * 0.4, 5, 4), treeMat);
-      canopy.position.set(Math.cos(angle) * dist, treeH * 0.7, Math.sin(angle) * dist);
-      canopy.scale.y = 1.3;
-      scene3d.add(canopy);
-    }
-  } else if (biome === 'beach') {
-    // sand dunes, water plane in distance
-    const waterGeo = new THREE.PlaneGeometry(20, 10);
-    const waterMat = new THREE.MeshPhongMaterial({
-      color: 0x1a5566, transparent: true, opacity: 0.7,
-      flatShading: true, shininess: 60,
-    });
-    const water = new THREE.Mesh(waterGeo, waterMat);
-    water.rotation.x = -Math.PI / 2;
-    water.position.set(0, -0.05, -8);
-    scene3d.add(water);
-  }
-
-  // Camera
-  camera3d = new THREE.PerspectiveCamera(50, W / H, 0.1, 100);
-  camera3d.position.set(-1, 3.5, 5.5);
-  camera3d.lookAt(0, 0.8, 0);
-}
-
-// ---- 3D PARTICLE SYSTEM ----
-function spawn3DParticles(position, type, count) {
-  const typeColors = {
-    fire: [0xff6600, 0xffcc00, 0xff3300],
-    water: [0x3399ff, 0x66bbff, 0xaaddff],
-    earth: [0x88cc44, 0xccaa55, 0x887744],
-    electric: [0xffee00, 0xffffff, 0xaaddff],
-    shadow: [0xaa66cc, 0x663399, 0x4411aa],
-    ice: [0x88ddff, 0xffffff, 0xbbddff],
-    toxic: [0x99cc33, 0xccff44, 0x667722],
+function spawnImpactEffect(x, y, type) {
+  const colors = {
+    fire: ['#ff6600','#ffcc00','#ff3300'],
+    water: ['#3399ff','#66bbff','#ffffff'],
+    earth: ['#88cc44','#ccaa55','#887744'],
+    electric: ['#ffee00','#ffffff','#aaddff'],
+    shadow: ['#aa66cc','#663399','#4411aa'],
+    ice: ['#88ddff','#ffffff','#bbddff'],
+    toxic: ['#99cc33','#ccff44','#667722']
   };
-  const colors = typeColors[type] || typeColors.earth;
+  const c = colors[type] || colors.earth;
 
-  for (let i = 0; i < (count || 15); i++) {
-    const geo = new THREE.SphereGeometry(0.04 + Math.random() * 0.06, 4, 3);
-    const mat = new THREE.MeshBasicMaterial({
-      color: colors[Math.floor(Math.random() * colors.length)],
-      transparent: true, opacity: 1,
+  // slash lines
+  for (let i = 0; i < 3; i++) {
+    const angle = -0.5 + Math.random() * 1;
+    battleAnim.impactEffects.push({
+      x, y, type: 'slash', t: 0, maxT: 18,
+      angle, len: 20 + Math.random() * 25,
+      color: c[i % c.length]
     });
-    const p = new THREE.Mesh(geo, mat);
-    p.position.copy(position);
-    const angle = Math.random() * Math.PI * 2;
-    const upAngle = Math.random() * Math.PI * 0.6;
-    const speed = 0.08 + Math.random() * 0.12;
-    p.userData.vel = new THREE.Vector3(
-      Math.cos(angle) * Math.sin(upAngle) * speed,
-      Math.cos(upAngle) * speed + 0.05,
-      Math.sin(angle) * Math.sin(upAngle) * speed,
-    );
-    p.userData.life = 1;
-    p.userData.decay = 0.015 + Math.random() * 0.02;
-    p.userData.gravity = type === 'ice' ? 0.0005 : type === 'fire' ? -0.001 : 0.002;
-    scene3d.add(p);
-    battleParticles3d.push(p);
   }
 
-  // Type-specific effects
-  if (type === 'electric') {
-    // Lightning bolt line
-    for (let b = 0; b < 3; b++) {
-      const pts = [];
-      const start = position.clone().add(new THREE.Vector3(0, 1.5, 0));
-      const end = position.clone();
-      for (let s = 0; s <= 5; s++) {
-        const t = s / 5;
-        pts.push(new THREE.Vector3(
-          lerp(start.x, end.x, t) + (Math.random() - 0.5) * 0.5,
-          lerp(start.y, end.y, t) + (Math.random() - 0.5) * 0.3,
-          lerp(start.z, end.z, t) + (Math.random() - 0.5) * 0.5,
-        ));
-      }
-      const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
-      const lineMat = new THREE.LineBasicMaterial({ color: 0xffee44, linewidth: 2, transparent: true, opacity: 1 });
-      const line = new THREE.Line(lineGeo, lineMat);
-      line.userData.life = 1;
-      line.userData.decay = 0.08;
-      scene3d.add(line);
-      battleParticles3d.push(line);
-    }
-  } else if (type === 'fire') {
-    // Extra fire particles rising
-    for (let i = 0; i < 8; i++) {
-      const geo = new THREE.ConeGeometry(0.06, 0.15, 4);
-      const mat = new THREE.MeshBasicMaterial({
-        color: i % 2 ? 0xffcc00 : 0xff4400,
-        transparent: true, opacity: 0.9,
+  // burst particles
+  for (let i = 0; i < 10; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    battleAnim.impactEffects.push({
+      x, y, type: 'particle', t: 0, maxT: 22 + Math.random() * 10,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      size: 2 + Math.random() * 4,
+      color: c[Math.floor(Math.random() * c.length)]
+    });
+  }
+
+  // type-specific
+  if (type === 'fire') {
+    for (let i = 0; i < 6; i++) {
+      battleAnim.impactEffects.push({
+        x: x + (Math.random()-0.5)*30, y: y + (Math.random()-0.5)*20,
+        type: 'flame', t: 0, maxT: 25,
+        size: 8 + Math.random() * 12,
+        color: i%2 ? '#ffcc00' : '#ff4400'
       });
-      const flame = new THREE.Mesh(geo, mat);
-      flame.position.copy(position).add(new THREE.Vector3((Math.random()-0.5)*0.5, Math.random()*0.3, (Math.random()-0.5)*0.5));
-      flame.userData.vel = new THREE.Vector3((Math.random()-0.5)*0.02, 0.06 + Math.random()*0.04, (Math.random()-0.5)*0.02);
-      flame.userData.life = 1;
-      flame.userData.decay = 0.025;
-      flame.userData.gravity = -0.002;
-      scene3d.add(flame);
-      battleParticles3d.push(flame);
+    }
+  } else if (type === 'electric') {
+    for (let i = 0; i < 4; i++) {
+      battleAnim.impactEffects.push({
+        x, y, type: 'lightning', t: 0, maxT: 12,
+        points: generateLightningBolt(x, y - 40, x + (Math.random()-0.5)*50, y + 20),
+        color: '#ffee44'
+      });
+    }
+  } else if (type === 'water') {
+    for (let i = 0; i < 8; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      battleAnim.impactEffects.push({
+        x, y, type: 'droplet', t: 0, maxT: 28,
+        vx: Math.cos(angle) * (1+Math.random()*3),
+        vy: Math.sin(angle) * 3 - 4,
+        size: 3 + Math.random() * 4,
+        color: c[Math.floor(Math.random()*c.length)]
+      });
     }
   } else if (type === 'shadow') {
-    // Void sphere
-    const voidGeo = new THREE.SphereGeometry(0.01, 8, 6);
-    const voidMat = new THREE.MeshBasicMaterial({ color: 0x663399, transparent: true, opacity: 0.6 });
-    const voidSphere = new THREE.Mesh(voidGeo, voidMat);
-    voidSphere.position.copy(position);
-    voidSphere.userData.life = 1;
-    voidSphere.userData.decay = 0.02;
-    voidSphere.userData.isVoid = true;
-    scene3d.add(voidSphere);
-    battleParticles3d.push(voidSphere);
+    battleAnim.impactEffects.push({
+      x, y, type: 'voidCircle', t: 0, maxT: 30,
+      size: 35, color: '#663399'
+    });
   } else if (type === 'ice') {
-    // Ice crystals
     for (let i = 0; i < 5; i++) {
-      const geo = new THREE.OctahedronGeometry(0.08 + Math.random() * 0.08, 0);
-      const mat = new THREE.MeshPhongMaterial({
-        color: colors[i % colors.length],
-        transparent: true, opacity: 0.8,
-        flatShading: true, shininess: 80,
+      battleAnim.impactEffects.push({
+        x: x + (Math.random()-0.5)*40, y: y + (Math.random()-0.5)*30,
+        type: 'crystal', t: 0, maxT: 30,
+        size: 6 + Math.random() * 10,
+        angle: Math.random() * Math.PI,
+        color: c[i%c.length]
       });
-      const cryst = new THREE.Mesh(geo, mat);
-      cryst.position.copy(position).add(new THREE.Vector3((Math.random()-0.5)*0.6, Math.random()*0.5, (Math.random()-0.5)*0.6));
-      cryst.userData.life = 1;
-      cryst.userData.decay = 0.012;
-      cryst.userData.vel = new THREE.Vector3(0, 0, 0);
-      cryst.userData.gravity = 0;
-      cryst.userData.spin = Math.random() * 0.1;
-      scene3d.add(cryst);
-      battleParticles3d.push(cryst);
     }
   }
-
-  // Impact flash light
-  const flashColors = {
-    fire: 0xff6600, water: 0x3399ff, earth: 0x88cc44,
-    electric: 0xffee00, shadow: 0xaa66cc, ice: 0x88ddff, toxic: 0x99cc33,
-  };
-  const flashLight = new THREE.PointLight(flashColors[type] || 0xffffff, 3, 5);
-  flashLight.position.copy(position);
-  flashLight.userData.life = 1;
-  flashLight.userData.decay = 0.06;
-  scene3d.add(flashLight);
-  impactLights.push(flashLight);
 }
 
-function updateParticles3D() {
-  battleParticles3d = battleParticles3d.filter(p => {
-    p.userData.life -= p.userData.decay;
-    if (p.userData.life <= 0) {
-      scene3d.remove(p);
-      if (p.geometry) p.geometry.dispose();
-      if (p.material) p.material.dispose();
-      return false;
-    }
-    if (p.material) p.material.opacity = p.userData.life;
-    if (p.userData.vel) {
-      p.position.add(p.userData.vel);
-      p.userData.vel.y -= (p.userData.gravity || 0.002);
-    }
-    if (p.userData.isVoid) {
-      const s = (1 - p.userData.life) * 1.5 + 0.1;
-      p.scale.set(s, s, s);
-    }
-    if (p.userData.spin) {
-      p.rotation.y += p.userData.spin;
-      p.rotation.x += p.userData.spin * 0.7;
-    }
-    return true;
-  });
-
-  impactLights = impactLights.filter(l => {
-    l.userData.life -= l.userData.decay;
-    if (l.userData.life <= 0) {
-      scene3d.remove(l);
-      return false;
-    }
-    l.intensity = l.userData.life * 3;
-    return true;
-  });
-}
-
-// ---- 3D ATTACK ANIMATIONS ----
-function triggerAttackAnim3D(attacker, moveType) {
-  if (attacker === 'player' && playerMesh) {
-    const target = b3d.enemyBasePos.clone().lerp(b3d.playerBasePos, 0.35);
-    target.y = 0.3;
-    b3d.playerTargetPos = target;
-
-    setTimeout(() => {
-      b3d.enemyFlash = 1;
-      b3d.enemyShake = 0.15;
-      b3d.cameraShake = 0.08;
-      const impactPos = b3d.enemyBasePos.clone();
-      impactPos.y = 0.8;
-      spawn3DParticles(impactPos, moveType, 18);
-      b3d.playerTargetPos = null;
-    }, 150);
-  } else if (attacker === 'enemy' && enemyMesh) {
-    const target = b3d.playerBasePos.clone().lerp(b3d.enemyBasePos, 0.35);
-    target.y = 0.2;
-    b3d.enemyTargetPos = target;
-
-    setTimeout(() => {
-      b3d.playerFlash = 1;
-      b3d.playerShake = 0.15;
-      b3d.cameraShake = 0.08;
-      const impactPos = b3d.playerBasePos.clone();
-      impactPos.y = 0.6;
-      spawn3DParticles(impactPos, moveType, 18);
-      b3d.enemyTargetPos = null;
-    }, 150);
+function generateLightningBolt(x1, y1, x2, y2) {
+  const pts = [{x:x1, y:y1}];
+  const segments = 5;
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    pts.push({
+      x: lerp(x1, x2, t) + (Math.random()-0.5) * 25,
+      y: lerp(y1, y2, t) + (Math.random()-0.5) * 10
+    });
   }
+  pts.push({x:x2, y:y2});
+  return pts;
 }
 
-function flashMonsterWhite(mesh, intensity) {
-  if (!mesh) return;
-  mesh.traverse(child => {
-    if (child.isMesh && child.material) {
-      if (!b3d.originalMaterials.has(child.uuid)) {
-        b3d.originalMaterials.set(child.uuid, child.material);
+function drawImpactEffects() {
+  for (const e of battleAnim.impactEffects) {
+    const progress = e.t / e.maxT;
+    const alpha = 1 - progress;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    switch (e.type) {
+      case 'slash': {
+        ctx.strokeStyle = e.color;
+        ctx.lineWidth = 3 * (1 - progress);
+        ctx.lineCap = 'round';
+        const ext = e.len * Math.min(1, e.t / 5);
+        ctx.beginPath();
+        ctx.moveTo(e.x - Math.cos(e.angle) * ext * 0.5, e.y - Math.sin(e.angle) * ext * 0.5);
+        ctx.lineTo(e.x + Math.cos(e.angle) * ext * 0.5, e.y + Math.sin(e.angle) * ext * 0.5);
+        ctx.stroke();
+        break;
       }
-      if (intensity > 0.1) {
-        child.material = new THREE.MeshBasicMaterial({
-          color: 0xffffff,
-          transparent: true,
-          opacity: intensity,
-        });
-      } else {
-        const orig = b3d.originalMaterials.get(child.uuid);
-        if (orig) child.material = orig;
+      case 'particle': {
+        e.x += e.vx; e.y += e.vy; e.vy += 0.15;
+        ctx.fillStyle = e.color;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.size * (1 - progress * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'flame': {
+        const s = e.size * (1 - progress * 0.7);
+        const fy = e.y - e.t * 1.5;
+        ctx.fillStyle = e.color;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(e.x, fy - s);
+        ctx.quadraticCurveTo(e.x + s * 0.6, fy - s * 0.3, e.x + s * 0.3, fy + s * 0.5);
+        ctx.quadraticCurveTo(e.x, fy + s * 0.2, e.x - s * 0.3, fy + s * 0.5);
+        ctx.quadraticCurveTo(e.x - s * 0.6, fy - s * 0.3, e.x, fy - s);
+        ctx.fill();
+        break;
+      }
+      case 'lightning': {
+        ctx.strokeStyle = e.color;
+        ctx.lineWidth = 2.5 * (1 - progress);
+        ctx.shadowColor = e.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        e.points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        break;
+      }
+      case 'droplet': {
+        e.x += e.vx; e.y += e.vy; e.vy += 0.2;
+        ctx.fillStyle = e.color;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.beginPath();
+        ctx.ellipse(e.x, e.y, e.size * 0.6, e.size, 0, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'voidCircle': {
+        const r = e.size * progress;
+        const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, r);
+        grad.addColorStop(0, e.color + '88');
+        grad.addColorStop(0.6, e.color + '44');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'crystal': {
+        const s = e.size * (1 - progress * 0.3);
+        ctx.fillStyle = e.color;
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        ctx.rotate(e.angle);
+        ctx.beginPath();
+        ctx.moveTo(0, -s); ctx.lineTo(s*0.35, 0); ctx.lineTo(0, s*0.6); ctx.lineTo(-s*0.35, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        break;
       }
     }
-  });
-}
-
-function update3DBattle() {
-  const dt = 0.016;
-
-  // Slide-in
-  if (b3d.enemySlideProgress < 1) {
-    b3d.enemySlideProgress = Math.min(1, b3d.enemySlideProgress + 0.035);
+    ctx.restore();
   }
-  if (b3d.playerSlideProgress < 1) {
-    b3d.playerSlideProgress = Math.min(1, b3d.playerSlideProgress + 0.04);
-  }
-
-  // Smooth easing for slide
-  const easeOut = t => 1 - Math.pow(1 - t, 3);
-
-  // Player position
-  if (playerMesh) {
-    let targetPos = b3d.playerTargetPos || b3d.playerBasePos;
-    const slideOffset = (1 - easeOut(b3d.playerSlideProgress)) * -6;
-    const baseWithSlide = b3d.playerBasePos.clone();
-    baseWithSlide.x += slideOffset;
-
-    if (!b3d.playerTargetPos) targetPos = baseWithSlide;
-
-    playerMesh.position.lerp(targetPos, 0.15);
-
-    // Shake
-    if (b3d.playerShake > 0.005) {
-      playerMesh.position.x += (Math.random() - 0.5) * b3d.playerShake;
-      playerMesh.position.z += (Math.random() - 0.5) * b3d.playerShake;
-      b3d.playerShake *= 0.88;
-    }
-
-    // Flash
-    if (b3d.playerFlash > 0.05) {
-      flashMonsterWhite(playerMesh, b3d.playerFlash);
-      b3d.playerFlash *= 0.88;
-    } else if (b3d.playerFlash > 0) {
-      flashMonsterWhite(playerMesh, 0);
-      b3d.playerFlash = 0;
-    }
-
-    // Breathing idle
-    const breathe = Math.sin(animT * 0.03) * 0.02;
-    playerMesh.scale.y = 1 + breathe;
-    playerMesh.rotation.y = Math.PI * 0.3 + Math.sin(animT * 0.015) * 0.03;
-  }
-
-  // Enemy position
-  if (enemyMesh) {
-    let targetPos = b3d.enemyTargetPos || b3d.enemyBasePos;
-    const slideOffset = (1 - easeOut(b3d.enemySlideProgress)) * 6;
-    const baseWithSlide = b3d.enemyBasePos.clone();
-    baseWithSlide.x += slideOffset;
-
-    if (!b3d.enemyTargetPos) targetPos = baseWithSlide;
-
-    enemyMesh.position.lerp(targetPos, 0.15);
-
-    // Death animation
-    if (b3d.enemyDeathProgress > 0) {
-      const d = b3d.enemyDeathProgress;
-      enemyMesh.scale.set(1 - d * 0.7, 1 - d * 0.7, 1 - d * 0.7);
-      enemyMesh.position.y = -d * 0.5;
-      enemyMesh.rotation.y += 0.05 * d;
-      enemyMesh.traverse(child => {
-        if (child.isMesh && child.material && child.material.transparent !== undefined) {
-          child.material.transparent = true;
-          child.material.opacity = 1 - d;
-        }
-      });
-    } else {
-      // Shake
-      if (b3d.enemyShake > 0.005) {
-        enemyMesh.position.x += (Math.random() - 0.5) * b3d.enemyShake;
-        enemyMesh.position.z += (Math.random() - 0.5) * b3d.enemyShake;
-        b3d.enemyShake *= 0.88;
-      }
-
-      // Flash
-      if (b3d.enemyFlash > 0.05) {
-        flashMonsterWhite(enemyMesh, b3d.enemyFlash);
-        b3d.enemyFlash *= 0.88;
-      } else if (b3d.enemyFlash > 0) {
-        flashMonsterWhite(enemyMesh, 0);
-        b3d.enemyFlash = 0;
-      }
-
-      // Breathing idle
-      const breathe = Math.sin(animT * 0.03 + 1) * 0.025;
-      enemyMesh.scale.y = 1 + breathe;
-      enemyMesh.rotation.y = -Math.PI * 0.3 + Math.sin(animT * 0.012 + 2) * 0.04;
-    }
-  }
-
-  // Camera shake
-  const camBase = new THREE.Vector3(-1, 3.5, 5.5);
-  const camLookAt = new THREE.Vector3(0, 0.8, 0);
-  if (b3d.cameraShake > 0.003) {
-    camera3d.position.set(
-      camBase.x + (Math.random() - 0.5) * b3d.cameraShake,
-      camBase.y + (Math.random() - 0.5) * b3d.cameraShake * 0.5,
-      camBase.z + (Math.random() - 0.5) * b3d.cameraShake,
-    );
-    b3d.cameraShake *= 0.9;
-  } else {
-    camera3d.position.lerp(camBase, 0.05);
-  }
-  camera3d.lookAt(camLookAt);
-
-  // Update particles
-  updateParticles3D();
-
-  // Render
-  renderer3d.render(scene3d, camera3d);
-}
-
-function reset3DBattle() {
-  b3d.playerShake = 0;
-  b3d.enemyShake = 0;
-  b3d.playerFlash = 0;
-  b3d.enemyFlash = 0;
-  b3d.cameraShake = 0;
-  b3d.playerTargetPos = null;
-  b3d.enemyTargetPos = null;
-  b3d.enemySlideProgress = 0;
-  b3d.playerSlideProgress = 0;
-  b3d.enemyDeathProgress = 0;
-  b3d.originalMaterials.clear();
-  battleParticles3d = [];
-  impactLights = [];
-}
-
-function cleanup3DScene() {
-  if (!scene3d) return;
-  // Dispose all objects
-  scene3d.traverse(obj => {
-    if (obj.geometry) obj.geometry.dispose();
-    if (obj.material) {
-      if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-      else obj.material.dispose();
-    }
-  });
-  while (scene3d.children.length) scene3d.remove(scene3d.children[0]);
-  playerMesh = null;
-  enemyMesh = null;
-  arenaLights = [];
-  battleParticles3d = [];
-  impactLights = [];
-}
-
-// Helper: project 3D position to screen coordinates for damage floats
-function worldToScreen(worldPos) {
-  if (!camera3d) return { x: W * 0.5, y: H * 0.5 };
-  const v = worldPos.clone().project(camera3d);
-  return {
-    x: (v.x * 0.5 + 0.5) * W,
-    y: (-v.y * 0.5 + 0.5) * H,
-  };
 }
 
 // ---- BIOME CONFIGS ----
@@ -1318,9 +762,108 @@ function drawScene() {
   // Walking character
   if(gameState==='walking') drawWalker(groundY);
 
-  // Enemy creature on 2D canvas during encounter (before 3D swap)
-  if(gameState==='encounter' && enemyMonster) {
-    drawCreatureOnScene(enemyMonster, W*0.65, groundY - 10, 0.55, false);
+  // Battle creatures with 2.5D animations
+  if(gameState==='battle' || gameState==='encounter') {
+    // 2.5D battle arena ground plane
+    if(gameState==='battle') {
+      ctx.save();
+      // perspective ground shadow/gradient
+      const arenaY = groundY - 5;
+      const arenaGrad = ctx.createLinearGradient(0, arenaY, 0, arenaY + 40);
+      arenaGrad.addColorStop(0, 'rgba(0,0,0,0.15)');
+      arenaGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = arenaGrad;
+      ctx.beginPath();
+      ctx.ellipse(W*0.5, arenaY + 5, W*0.55, 25, 0, 0, Math.PI*2);
+      ctx.fill();
+      // ground line
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(W*0.5, arenaY + 5, W*0.55, 25, 0, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+
+      // camera zoom
+      if(battleAnim.cameraZoom !== 1) {
+        ctx.save();
+        ctx.translate(W/2, H*0.5);
+        ctx.scale(battleAnim.cameraZoom, battleAnim.cameraZoom);
+        ctx.translate(-W/2, -H*0.5);
+      }
+    }
+
+    // Enemy creature with animation offsets
+    if(enemyMonster) {
+      const eSlide = gameState==='encounter' ? 0.5 : Math.min(1, battleAnim.enemySlideIn);
+      const eBaseX = W*0.65;
+      const eBaseY = groundY - 10;
+      const eOffX = (1 - eSlide) * W * 0.5; // slide in from right
+      const eShakeX = battleAnim.enemyShake ? (Math.random()-0.5) * battleAnim.enemyShake : 0;
+      const eShakeY = battleAnim.enemyShake ? (Math.random()-0.5) * battleAnim.enemyShake * 0.5 : 0;
+      const eDeath = battleAnim.enemyDeath;
+
+      ctx.save();
+      if(eDeath > 0) {
+        ctx.globalAlpha = 1 - eDeath;
+        ctx.translate(eBaseX + battleAnim.enemyX + eOffX + eShakeX, eBaseY + battleAnim.enemyY + eShakeY + eDeath * 20);
+        ctx.scale(1 - eDeath * 0.5, 1 - eDeath * 0.5);
+        ctx.translate(-(eBaseX + battleAnim.enemyX + eOffX + eShakeX), -(eBaseY + battleAnim.enemyY + eShakeY + eDeath * 20));
+      }
+
+      drawCreatureOnScene(enemyMonster,
+        eBaseX + battleAnim.enemyX + eOffX + eShakeX,
+        eBaseY + battleAnim.enemyY + eShakeY + (eDeath > 0 ? eDeath * 20 : 0),
+        0.55, false);
+
+      // white flash overlay on hit
+      if(battleAnim.enemyFlash > 0.05) {
+        ctx.globalAlpha = battleAnim.enemyFlash * 0.6;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(eBaseX + battleAnim.enemyX + eOffX, eBaseY - 15, 40, 50, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      ctx.restore();
+    }
+
+    // Player creature with animation offsets
+    if(gameState==='battle') {
+      const pSlide = Math.min(1, battleAnim.playerSlideIn);
+      const pBaseX = W*0.2;
+      const pBaseY = groundY + 5;
+      const pOffX = (1 - pSlide) * -W * 0.4; // slide in from left
+      const pShakeX = battleAnim.playerShake ? (Math.random()-0.5) * battleAnim.playerShake : 0;
+      const pShakeY = battleAnim.playerShake ? (Math.random()-0.5) * battleAnim.playerShake * 0.5 : 0;
+
+      ctx.save();
+      drawCreatureOnScene(playerMonster,
+        pBaseX + battleAnim.playerX + pOffX + pShakeX,
+        pBaseY + battleAnim.playerY + pShakeY,
+        0.4, true);
+
+      // white flash overlay on hit
+      if(battleAnim.playerFlash > 0.05) {
+        ctx.globalAlpha = battleAnim.playerFlash * 0.6;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(pBaseX + battleAnim.playerX + pOffX, pBaseY - 10, 30, 40, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      ctx.restore();
+    }
+
+    // Draw impact effects on top of creatures
+    drawImpactEffects();
+
+    // restore camera zoom
+    if(gameState==='battle' && battleAnim.cameraZoom !== 1) {
+      ctx.restore();
+    }
   }
 
   // Atmospheric overlay (vignette)
@@ -1990,38 +1533,10 @@ function startBattle() {
   battleTurn = 'player';
   playerMonster.currentHP = playerMonster.stats.hp; // heal for demo
 
-  // Init 3D
-  init3DRenderer();
-  resize3D();
-  reset3DBattle();
-  buildBattleArena(currentZone);
-
-  // Build 3D monsters
-  playerMesh = buildMonsterMesh(playerMonster);
-  playerMesh.position.copy(b3d.playerBasePos).add(new THREE.Vector3(-6, 0, 0));
-  playerMesh.rotation.y = Math.PI * 0.3;
-  scene3d.add(playerMesh);
-
-  enemyMesh = buildMonsterMesh(enemyMonster);
-  enemyMesh.position.copy(b3d.enemyBasePos).add(new THREE.Vector3(6, 0, 0));
-  enemyMesh.rotation.y = -Math.PI * 0.3;
-  scene3d.add(enemyMesh);
-
-  // Type-colored rim lights on each monster
-  const typeColors3d = {
-    fire: 0xff4400, water: 0x2288cc, earth: 0x66aa33,
-    electric: 0xddaa00, shadow: 0x8844cc, ice: 0x66bbdd, toxic: 0x88aa22,
-  };
-  const pLight = new THREE.PointLight(typeColors3d[playerMonster.type] || 0x66aa33, 0.4, 4);
-  pLight.position.copy(b3d.playerBasePos).add(new THREE.Vector3(0, 1.5, 0));
-  scene3d.add(pLight);
-  const eLight = new THREE.PointLight(typeColors3d[enemyMonster.type] || 0xff4400, 0.4, 4);
-  eLight.position.copy(b3d.enemyBasePos).add(new THREE.Vector3(0, 1.5, 0));
-  scene3d.add(eLight);
-
-  // Swap canvases: show 3D, hide 2D
-  sceneCanvas.style.display = 'none';
-  scene3dCanvas.style.display = 'block';
+  // init battle animations — slide in from offscreen
+  resetBattleAnim();
+  battleAnim.enemySlideIn = 0;
+  battleAnim.playerSlideIn = 0;
 
   // switch UI
   document.body.classList.add('in-battle');
@@ -2082,30 +1597,29 @@ function playerAttack(moveIdx) {
   const variance = 0.85 + Math.random() * 0.3;
   const dmg = Math.max(1, Math.floor(baseDmg * atkMod * (1 - defMod * 0.5) * variance));
 
-  // trigger 3D attack animation
-  triggerAttackAnim3D('player', move.type);
+  // trigger attack animation
+  triggerAttackAnim('player', move.type);
 
   enemyMonster.currentHP -= dmg;
   updateBattleUI();
 
-  // damage float projected from 3D
-  const eDmgPos = worldToScreen(b3d.enemyBasePos.clone().add(new THREE.Vector3(0, 1.5, 0)));
-  showDmgFloat(dmg, eDmgPos.x, eDmgPos.y);
+  // damage float
+  showDmgFloat(dmg, W*0.65, H*0.3);
 
   const log = document.getElementById('battleLog');
   log.textContent = `${playerMonster.name} used ${move.name}! -${dmg} HP`;
   log.className = 'hit';
 
   if(enemyMonster.currentHP <= 0) {
-    // 3D death animation
-    const deathInterval = setInterval(() => {
-      b3d.enemyDeathProgress += 0.03;
-      if(b3d.enemyDeathProgress >= 1) {
-        clearInterval(deathInterval);
-        b3d.enemyDeathProgress = 1;
+    // death animation — shrink/fade
+    const deathAnim = setInterval(() => {
+      battleAnim.enemyDeath += 0.04;
+      if(battleAnim.enemyDeath >= 1) {
+        clearInterval(deathAnim);
+        battleAnim.enemyDeath = 1;
       }
     }, 30);
-    setTimeout(() => endBattle('victory'), 1000);
+    setTimeout(() => endBattle('victory'), 800);
     return;
   }
 
@@ -2117,13 +1631,12 @@ function playerAttack(moveIdx) {
     const eVar = 0.85 + Math.random() * 0.3;
     const eDmg = Math.max(1, Math.floor(eMove.damage * eAtkMod * (1 - eDefMod * 0.5) * eVar));
 
-    triggerAttackAnim3D('enemy', eMove.type);
+    triggerAttackAnim('enemy', eMove.type);
 
     playerMonster.currentHP -= eDmg;
     updateBattleUI();
 
-    const pDmgPos = worldToScreen(b3d.playerBasePos.clone().add(new THREE.Vector3(0, 1.2, 0)));
-    showDmgFloat(eDmg, pDmgPos.x, pDmgPos.y);
+    showDmgFloat(eDmg, W*0.2, H*0.45);
 
     log.textContent = `${enemyMonster.name} used ${eMove.name}! -${eDmg} HP`;
 
@@ -2157,11 +1670,8 @@ function runFromBattle() {
     setTimeout(() => {
       const eMove = pick(enemyMonster.moves);
       const eDmg = Math.max(1, Math.floor(eMove.damage * (enemyMonster.stats.atk/50) * (1 - playerMonster.stats.def/200) * (0.85+Math.random()*0.3)));
-      triggerAttackAnim3D('enemy', eMove.type);
       playerMonster.currentHP -= eDmg;
       updateBattleUI();
-      const pPos = worldToScreen(b3d.playerBasePos.clone().add(new THREE.Vector3(0, 1.2, 0)));
-      showDmgFloat(eDmg, pPos.x, pPos.y);
       log.textContent = `${enemyMonster.name} attacks! -${eDmg} HP`;
       if(playerMonster.currentHP <= 0) {
         setTimeout(() => endBattle('defeat'), 600);
@@ -2205,12 +1715,6 @@ function dismissResult() {
   exploreBtn.innerHTML = '<span class="shimmer"></span>Explore';
   exploreStatus.textContent = '';
   playerMonster.currentHP = playerMonster.stats.hp;
-
-  // Swap back from 3D to 2D
-  cleanup3DScene();
-  scene3dCanvas.style.display = 'none';
-  sceneCanvas.style.display = 'block';
-
   gameState = 'explore';
   enemyMonster = null;
 }
@@ -2221,11 +1725,10 @@ function loop() {
   if(gameState === 'walking') {
     walkProgress += 0.003;
   }
-  if(gameState === 'battle' && renderer3d && scene3d && camera3d) {
-    update3DBattle();
-  } else {
-    drawScene();
+  if(gameState === 'battle' || gameState === 'encounter') {
+    updateBattleAnims();
   }
+  drawScene();
   requestAnimationFrame(loop);
 }
 loop();
