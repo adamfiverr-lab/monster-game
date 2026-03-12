@@ -30,12 +30,13 @@
   html, body { height:100%; overflow:hidden; background:var(--abyss); color:var(--text); font-family:'Fira Code',monospace; }
   body { display:flex; flex-direction:column; }
 
-  /* ---- SCENE CANVAS (top half) ---- */
+  /* ---- SCENE CANVAS ---- */
   #sceneWrap {
-    position:relative; flex:1 1 50%; min-height:0;
+    position:relative; flex:1 1 60%; min-height:0;
     overflow:hidden;
     border-bottom: 2px solid var(--border);
   }
+  body.in-battle #sceneWrap { flex: 1 1 55%; }
   #scene { width:100%; height:100%; display:block; }
 
   /* Encounter flash overlay */
@@ -65,7 +66,7 @@
     background: var(--deep);
     display:flex; flex-direction:column;
     padding:0 0 var(--safe-bottom);
-    max-height:55%;
+    max-height:45%;
     border-top:1px solid var(--border);
   }
 
@@ -123,42 +124,42 @@
   }
 
   /* Battle mode */
-  #battleUI { display:none; padding:8px 12px 12px; }
-  #battleUI.active { display:flex; flex-direction:column; gap:8px; }
+  #battleUI { display:none; padding:6px 10px 8px; }
+  #battleUI.active { display:flex; flex-direction:column; gap:5px; }
 
   /* HP bars */
   .hp-section {
-    display:flex; align-items:center; gap:10px;
-    padding:6px 10px; background:var(--card); border-radius:10px;
+    display:flex; align-items:center; gap:6px;
+    padding:4px 8px; background:var(--card); border-radius:8px;
     border:1px solid var(--border);
   }
   .hp-name {
-    font-family:'Cinzel',serif; font-weight:700; font-size:12px;
+    font-family:'Cinzel',serif; font-weight:700; font-size:11px;
     color:var(--bright); min-width:0; flex:0 0 auto;
-    max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    max-width:72px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .hp-bar-wrap {
-    flex:1; height:10px; background:var(--abyss);
-    border-radius:5px; overflow:hidden; position:relative;
+    flex:1; height:8px; background:var(--abyss);
+    border-radius:4px; overflow:hidden; position:relative;
     border:1px solid var(--border);
   }
   .hp-bar {
-    height:100%; border-radius:5px;
+    height:100%; border-radius:4px;
     transition:width 0.5s ease, background 0.3s;
     position:relative;
   }
   .hp-bar::after {
     content:''; position:absolute; top:0; left:0; right:0; height:40%;
     background:linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 100%);
-    border-radius:5px 5px 0 0;
+    border-radius:4px 4px 0 0;
   }
   .hp-text {
-    font-size:11px; color:var(--muted); flex:0 0 auto;
+    font-size:10px; color:var(--muted); flex:0 0 auto;
     font-variant-numeric: tabular-nums;
-    min-width:52px; text-align:right;
+    min-width:46px; text-align:right;
   }
   .hp-lv {
-    font-size:10px; color:var(--gold-dim); flex:0 0 auto;
+    font-size:9px; color:var(--gold-dim); flex:0 0 auto;
   }
 
   /* Moves grid */
@@ -166,8 +167,8 @@
     display:grid; grid-template-columns:1fr 1fr; gap:8px;
   }
   .move-btn {
-    padding:14px 8px; border:none; border-radius:12px;
-    font-family:'Fira Code',monospace; font-size:12px; font-weight:600;
+    padding:10px 6px; border:none; border-radius:10px;
+    font-family:'Fira Code',monospace; font-size:11px; font-weight:600;
     cursor:pointer; text-align:center;
     background: var(--card);
     color:var(--bright);
@@ -176,8 +177,8 @@
     position:relative; overflow:hidden;
   }
   .move-btn:active { transform:scale(0.95); }
-  .move-btn .mv-name { display:block; margin-bottom:2px; font-size:13px; }
-  .move-btn .mv-dmg { display:block; font-size:10px; color:var(--muted); }
+  .move-btn .mv-name { display:block; margin-bottom:1px; font-size:11px; }
+  .move-btn .mv-dmg { display:block; font-size:9px; color:var(--muted); }
   .move-btn.type-fire { border-color:#cc330066; background:linear-gradient(135deg, #1a0a0a 0%, var(--card) 100%); }
   .move-btn.type-water { border-color:#1166cc66; background:linear-gradient(135deg, #0a0a1a 0%, var(--card) 100%); }
   .move-btn.type-earth { border-color:#55772266; background:linear-gradient(135deg, #0a1a0a 0%, var(--card) 100%); }
@@ -186,10 +187,14 @@
   .move-btn.type-ice { border-color:#4488aa66; background:linear-gradient(135deg, #0a1218 0%, var(--card) 100%); }
   .move-btn.type-toxic { border-color:#44661166; background:linear-gradient(135deg, #0e1a06 0%, var(--card) 100%); }
 
+  #battleBottom {
+    display:flex; gap:6px;
+  }
   #runBtn {
-    width:100%; padding:12px; border:none; border-radius:10px;
-    font-family:'Cinzel',serif; font-weight:700; font-size:13px;
-    letter-spacing:2px; text-transform:uppercase;
+    flex:0 0 auto;
+    padding:10px 16px; border:none; border-radius:10px;
+    font-family:'Cinzel',serif; font-weight:700; font-size:11px;
+    letter-spacing:1px; text-transform:uppercase;
     background:var(--card); color:var(--muted);
     border:1px solid var(--border); cursor:pointer;
     transition: transform 0.1s;
@@ -198,8 +203,10 @@
 
   /* Battle log */
   #battleLog {
-    font-size:11px; color:var(--muted); text-align:center;
-    min-height:16px; padding:2px 0;
+    flex:1;
+    font-size:10px; color:var(--muted); text-align:center;
+    display:flex; align-items:center; justify-content:center;
+    min-height:14px; padding:0;
     letter-spacing:0.5px;
   }
   #battleLog.hit { color:var(--accent-glow); }
@@ -277,7 +284,6 @@
       <div class="hp-bar-wrap"><div class="hp-bar" id="enemyBar" style="width:100%;background:var(--hp-green)"></div></div>
       <span class="hp-text" id="enemyHPText">80/80</span>
     </div>
-    <div id="battleLog">&nbsp;</div>
     <div class="hp-section" id="playerHP">
       <span class="hp-name" id="playerName">???</span>
       <span class="hp-lv" id="playerLv">Lv5</span>
@@ -285,7 +291,10 @@
       <span class="hp-text" id="playerHPText">100/100</span>
     </div>
     <div id="movesGrid"></div>
-    <button id="runBtn" ontouchend="runFromBattle()" onclick="runFromBattle()">Flee</button>
+    <div id="battleBottom">
+      <button id="runBtn" ontouchend="runFromBattle()" onclick="runFromBattle()">Flee</button>
+      <div id="battleLog">&nbsp;</div>
+    </div>
   </div>
 </div>
 
@@ -1141,7 +1150,9 @@ function startBattle() {
   playerMonster.currentHP = playerMonster.stats.hp; // heal for demo
 
   // switch UI
+  document.body.classList.add('in-battle');
   exploreUI.style.display = 'none';
+  document.getElementById('zones').style.display = 'none';
   battleUI.classList.add('active');
 
   updateBattleUI();
@@ -1297,6 +1308,8 @@ function endBattle(result) {
 function dismissResult() {
   resultOverlay.classList.remove('active');
   battleUI.classList.remove('active');
+  document.body.classList.remove('in-battle');
+  document.getElementById('zones').style.display = '';
   exploreUI.style.display = '';
   exploreBtn.classList.remove('walking');
   exploreBtn.innerHTML = '<span class="shimmer"></span>Explore';
