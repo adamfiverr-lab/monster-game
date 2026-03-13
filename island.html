@@ -200,9 +200,22 @@
   #battleBottom {
     display:flex; gap:6px;
   }
+  #catchBtn {
+    flex:0 0 auto;
+    padding:10px 14px; border:none; border-radius:10px;
+    font-family:'Cinzel',serif; font-weight:700; font-size:11px;
+    letter-spacing:1px; text-transform:uppercase;
+    background:linear-gradient(135deg, #1a6633 0%, #22aa55 100%);
+    color:#fff; cursor:pointer;
+    border:1px solid #22aa55;
+    box-shadow:0 2px 8px rgba(34,170,85,0.2);
+    transition: transform 0.1s;
+  }
+  #catchBtn:active { transform:scale(0.97); }
+  #catchBtn.disabled { background:var(--card); color:var(--muted); border-color:var(--border); box-shadow:none; pointer-events:none; }
   #runBtn {
     flex:0 0 auto;
-    padding:10px 16px; border:none; border-radius:10px;
+    padding:10px 14px; border:none; border-radius:10px;
     font-family:'Cinzel',serif; font-weight:700; font-size:11px;
     letter-spacing:1px; text-transform:uppercase;
     background:var(--card); color:var(--muted);
@@ -339,6 +352,83 @@
   }
   #expToast.show { opacity:1; }
 
+  /* Collection button */
+  #collectionBtn {
+    display:inline-block; margin-top:10px;
+    padding:10px 20px; border:none; border-radius:10px;
+    font-family:'Cinzel',serif; font-weight:700; font-size:12px;
+    letter-spacing:1px; text-transform:uppercase;
+    background:var(--card); color:var(--text);
+    border:1px solid var(--border); cursor:pointer;
+    transition: transform 0.1s;
+  }
+  #collectionBtn:active { transform:scale(0.97); }
+  #collectionBtn #collCount {
+    display:inline-block; min-width:18px; height:18px; line-height:18px;
+    text-align:center; border-radius:9px; font-size:10px;
+    background:var(--accent); color:#fff; margin-left:4px;
+    vertical-align:middle;
+  }
+
+  /* Collection overlay */
+  #collectionOverlay {
+    position:fixed; inset:0; background:rgba(11,14,23,0.96);
+    display:none; flex-direction:column; align-items:center;
+    z-index:100; padding:20px 16px;
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+  #collectionOverlay.active { display:flex; }
+  #collectionOverlay h2 {
+    font-family:'Cinzel',serif; font-weight:900; font-size:22px;
+    color:var(--gold); letter-spacing:3px; text-transform:uppercase;
+    margin-bottom:16px; flex:0 0 auto;
+  }
+  #collGrid {
+    display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;
+    width:100%; max-width:360px; flex:1 1 auto;
+  }
+  .coll-card {
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:8px; text-align:center; position:relative;
+  }
+  .coll-card canvas {
+    width:100%; aspect-ratio:1; border-radius:8px;
+    background:var(--abyss);
+  }
+  .coll-card .coll-name {
+    font-family:'Cinzel',serif; font-weight:700; font-size:11px;
+    color:var(--bright); margin-top:4px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .coll-card .coll-info {
+    font-size:9px; color:var(--muted); letter-spacing:0.5px;
+  }
+  #collectionOverlay > button {
+    flex:0 0 auto; margin-top:16px;
+    padding:14px 40px; border:none; border-radius:12px;
+    font-family:'Cinzel',serif; font-weight:700; font-size:15px;
+    letter-spacing:2px; text-transform:uppercase;
+    background:linear-gradient(135deg, var(--accent) 0%, #991b1b 100%);
+    color:#fff; cursor:pointer;
+    box-shadow:0 4px 20px rgba(239,68,68,0.3);
+  }
+  #collEmpty {
+    color:var(--muted); font-size:13px; letter-spacing:0.5px;
+    padding:40px 0; text-align:center;
+    font-family:'Cinzel',serif;
+    grid-column: 1 / -1;
+  }
+
+  /* Catch shake animation */
+  @keyframes catchShake {
+    0%,100% { transform:translate(0,0) rotate(0deg); }
+    15% { transform:translate(-6px,0) rotate(-5deg); }
+    30% { transform:translate(6px,0) rotate(5deg); }
+    45% { transform:translate(-4px,0) rotate(-3deg); }
+    60% { transform:translate(4px,0) rotate(3deg); }
+    75% { transform:translate(-2px,0) rotate(-1deg); }
+  }
+
   /* Expedition summary overlay */
   #expSummary {
     position:fixed; inset:0; background:rgba(11,14,23,0.95);
@@ -404,6 +494,7 @@
       Set Out
     </button>
     <div id="exploreStatus"></div>
+    <button id="collectionBtn" onclick="showCollection()">My Monsters <span id="collCount">0</span></button>
   </div>
 
   <div id="expeditionUI">
@@ -426,7 +517,8 @@
   <div id="battleUI">
     <div id="movesGrid"></div>
     <div id="battleBottom">
-      <button id="runBtn" ontouchend="runFromBattle()" onclick="runFromBattle()">Flee</button>
+      <button id="catchBtn" onclick="attemptCatch()">Catch</button>
+      <button id="runBtn" onclick="runFromBattle()">Flee</button>
       <div id="battleLog">&nbsp;</div>
     </div>
   </div>
@@ -442,6 +534,12 @@
   <h2>Expedition Complete</h2>
   <div id="summaryContent"></div>
   <button onclick="dismissSummary()">Return</button>
+</div>
+
+<div id="collectionOverlay">
+  <h2>My Monsters</h2>
+  <div id="collGrid"></div>
+  <button onclick="hideCollection()">Close</button>
 </div>
 
 <script>
@@ -478,6 +576,10 @@ let currentZone = 'beach';
 let walkProgress = 0;
 let encounterTimer = 0;
 let scrollOffset = 0;
+
+// ---- MONSTER COLLECTION ----
+let caughtMonsters = []; // array of full monster objects
+let catchTarget = null; // the monster we're trying to catch in battle
 
 // ---- TOP-DOWN FREE-ROAM EXPLORATION ----
 const MAP_W = 36, MAP_H = 36;
@@ -660,8 +762,8 @@ function generateMap(zone) {
   for (let i=0;i<rng(1,3);i++) {
     const s=findSpot(4); if(s) map.objects.push({...s,type:'npc',done:false});
   }
-  // Visible monsters
-  for (let i=0;i<rng(5,9);i++) {
+  // Visible monsters (all encounters are visible — no random ones)
+  for (let i=0;i<rng(8,14);i++) {
     const s=findSpot(3);
     if(s) map.objects.push({...s,type:'monster',data:generateEnemy(),done:false});
   }
@@ -845,25 +947,7 @@ function showToast(text) {
 
 // ---- TILE ARRIVAL & INTERACTIONS ----
 function handleTileArrival(gx, gy) {
-  const tile = map.tiles[gy*MAP_W+gx];
-
-  // Tall grass encounter
-  if (tile === T.TALL && Math.random() < ENCOUNTER_CHANCE) {
-    map.path = []; map.moving = false;
-    showToast('Wild encounter!');
-    const flash = document.getElementById('flash');
-    flash.classList.add('active');
-    setTimeout(() => flash.classList.remove('active'), 150);
-    enemyMonster = generateEnemy();
-    expStats.battles++;
-    setTimeout(() => {
-      document.getElementById('expeditionUI').classList.remove('active');
-      startBattle();
-    }, 400);
-    return;
-  }
-
-  // Check object
+  // Check object on this tile
   const obj = map.objects.find(o => o.gx===gx && o.gy===gy && !o.done);
   if (obj) {
     map.path = []; map.moving = false;
@@ -2682,13 +2766,13 @@ document.querySelectorAll('.zone-pill').forEach(pill => {
 
 // Explore button
 exploreBtn.addEventListener('click', startExpedition);
-exploreBtn.addEventListener('touchend', e => { e.preventDefault(); startExpedition(); });
 
 function startBattle() {
   gameState = 'battle';
   battleBusy = false;
   battleTurn = 'player';
   playerMonster.currentHP = playerMonster.stats.hp; // heal for demo
+  catchTarget = enemyMonster; // for catching
 
   // init battle animations — slide in from offscreen
   resetBattleAnim();
@@ -2701,6 +2785,11 @@ function startBattle() {
   document.getElementById('zones').style.display = 'none';
   document.getElementById('hpOverlay').classList.add('active');
   battleUI.classList.add('active');
+
+  // Enable catch button
+  const catchBtn = document.getElementById('catchBtn');
+  catchBtn.classList.remove('disabled');
+  catchBtn.textContent = 'Catch';
 
   updateBattleUI();
   renderMoves();
@@ -2737,7 +2826,6 @@ function renderMoves(){
     btn.className = 'move-btn type-' + move.type;
     btn.innerHTML = `<span class="mv-name">${move.name}</span><span class="mv-dmg">${move.damage} DMG</span>`;
     btn.addEventListener('click', () => playerAttack(i));
-    btn.addEventListener('touchend', e => { e.preventDefault(); playerAttack(i); });
     grid.appendChild(btn);
   });
 }
@@ -2843,7 +2931,16 @@ function endBattle(result) {
   const title = document.getElementById('resultTitle');
   const sub = document.getElementById('resultSub');
 
-  if(result === 'victory') {
+  if(result === 'caught') {
+    title.textContent = 'Caught!';
+    title.style.color = '#22c55e';
+    sub.textContent = `${catchTarget.name} joined your team!`;
+    // Add to collection
+    caughtMonsters.push(JSON.parse(JSON.stringify(catchTarget)));
+    document.getElementById('collCount').textContent = caughtMonsters.length;
+    // Save to localStorage
+    saveCaughtMonsters();
+  } else if(result === 'victory') {
     const xp = enemyMonster.level * 8 + rng(5,15);
     title.textContent = 'Victory';
     title.style.color = 'var(--gold)';
@@ -2864,6 +2961,7 @@ function endBattle(result) {
     sub.textContent = 'Got away safely.';
   }
 
+  catchTarget = null;
   resultOverlay.classList.add('active');
 }
 
@@ -2890,6 +2988,281 @@ function dismissResult() {
     enemyMonster = null;
   }
 }
+
+// ---- CATCH MECHANIC ----
+function attemptCatch() {
+  if(battleBusy || gameState !== 'battle' || !catchTarget) return;
+  battleBusy = true;
+
+  const log = document.getElementById('battleLog');
+  const hpPct = catchTarget.currentHP / catchTarget.stats.hp;
+
+  // Catch chance: lower HP = higher chance. At full HP ~15%, at 1HP ~90%
+  const baseChance = 0.15;
+  const hpBonus = (1 - hpPct) * 0.75;
+  const catchChance = Math.min(0.95, baseChance + hpBonus);
+
+  log.textContent = 'Throwing capture crystal...';
+  log.className = '';
+
+  // Animate: shake the enemy
+  const sceneWrap = document.getElementById('sceneWrap');
+
+  setTimeout(() => {
+    // Shake animation on canvas
+    sceneWrap.style.animation = 'catchShake 0.8s ease';
+    setTimeout(() => { sceneWrap.style.animation = ''; }, 800);
+
+    setTimeout(() => {
+      const success = Math.random() < catchChance;
+
+      if (success) {
+        log.textContent = `${catchTarget.name} was caught!`;
+        log.className = 'heal';
+
+        // Disable catch button
+        const catchBtn = document.getElementById('catchBtn');
+        catchBtn.classList.add('disabled');
+        catchBtn.textContent = 'Caught!';
+
+        // Shrink enemy animation
+        const shrinkAnim = setInterval(() => {
+          battleAnim.enemyDeath += 0.05;
+          if(battleAnim.enemyDeath >= 1) {
+            clearInterval(shrinkAnim);
+            battleAnim.enemyDeath = 1;
+          }
+        }, 30);
+
+        setTimeout(() => endBattle('caught'), 800);
+      } else {
+        log.textContent = `${catchTarget.name} broke free!`;
+        log.className = 'hit';
+
+        // Enemy retaliates
+        setTimeout(() => {
+          const eMove = pick(enemyMonster.moves);
+          const eDmg = Math.max(1, Math.floor(eMove.damage * (enemyMonster.stats.atk/50) * (1 - playerMonster.stats.def/200) * (0.85+Math.random()*0.3)));
+          triggerAttackAnim('enemy', eMove.type);
+          playerMonster.currentHP -= eDmg;
+          updateBattleUI();
+          showDmgFloat(eDmg, W*0.2, H*0.45);
+          log.textContent = `${enemyMonster.name} used ${eMove.name}! -${eDmg} HP`;
+
+          if(playerMonster.currentHP <= 0) {
+            setTimeout(() => endBattle('defeat'), 600);
+            return;
+          }
+          battleBusy = false;
+        }, 500);
+      }
+    }, 900);
+  }, 300);
+}
+
+// ---- MONSTER COLLECTION ----
+function saveCaughtMonsters() {
+  try {
+    localStorage.setItem('verdantia_monsters', JSON.stringify(caughtMonsters));
+  } catch(e) {}
+}
+
+function loadCaughtMonsters() {
+  try {
+    const data = localStorage.getItem('verdantia_monsters');
+    if (data) {
+      caughtMonsters = JSON.parse(data);
+      document.getElementById('collCount').textContent = caughtMonsters.length;
+    }
+  } catch(e) {}
+}
+
+function showCollection() {
+  const overlay = document.getElementById('collectionOverlay');
+  const grid = document.getElementById('collGrid');
+  grid.innerHTML = '';
+
+  if (caughtMonsters.length === 0) {
+    grid.innerHTML = '<div id="collEmpty">No monsters caught yet.<br>Explore and battle to catch them!</div>';
+  } else {
+    caughtMonsters.forEach((mon, idx) => {
+      const card = document.createElement('div');
+      card.className = 'coll-card';
+
+      const cvs = document.createElement('canvas');
+      const size = 140;
+      const dpr = window.devicePixelRatio || 1;
+      cvs.width = size * dpr;
+      cvs.height = size * dpr;
+      cvs.style.width = size + 'px';
+      cvs.style.height = size + 'px';
+      const c = cvs.getContext('2d');
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Draw creature on mini canvas
+      drawCreatureOnCanvas(c, mon, size/2, size*0.55, size*0.004, false);
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'coll-name';
+      nameDiv.textContent = mon.name;
+
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'coll-info';
+      infoDiv.textContent = `Lv${mon.level} · ${mon.type}`;
+
+      card.appendChild(cvs);
+      card.appendChild(nameDiv);
+      card.appendChild(infoDiv);
+      grid.appendChild(card);
+    });
+  }
+
+  overlay.classList.add('active');
+}
+
+function hideCollection() {
+  document.getElementById('collectionOverlay').classList.remove('active');
+}
+
+// Draw creature on any canvas context (reusable for collection)
+function drawCreatureOnCanvas(c, recipe, cx, cy, scale, flipped) {
+  c.save();
+  c.translate(cx, cy);
+  if(flipped) c.scale(-1,1);
+  const s = scale;
+  const col = recipe.colors;
+
+  // Body
+  const bw = 60*s*recipe.body.size, bh = 40*s*recipe.body.bulk;
+  c.fillStyle = col.base;
+  c.beginPath(); c.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2); c.fill();
+  // body highlight
+  c.fillStyle = col.light;
+  c.beginPath(); c.ellipse(0, -bh*0.3, bw*0.7, bh*0.4, 0, 0, Math.PI*2); c.fill();
+
+  // Armor texture
+  if(recipe.armor==='scales'||recipe.armor==='plates') {
+    c.strokeStyle = col.dark; c.lineWidth = 0.5*s;
+    for(let i=-3;i<=3;i++) for(let j=-2;j<=2;j++) {
+      const sx = i*bw*0.28, sy = j*bh*0.35;
+      if(sx*sx/(bw*bw)+sy*sy/(bh*bh)<0.8) {
+        c.beginPath(); c.arc(sx, sy, 4*s, 0, Math.PI*2); c.stroke();
+      }
+    }
+  }
+
+  // Neck
+  const neckLen = 30*s*recipe.neck.length;
+  const neckT = 12*s*recipe.neck.thick;
+  c.fillStyle = col.base;
+  c.beginPath();
+  c.moveTo(-bw*0.6, -bh*0.3);
+  c.quadraticCurveTo(-bw*0.6-neckLen*0.3, -bh*0.3-neckLen*0.7, -bw*0.5-neckLen*0.5, -bh*0.3-neckLen);
+  c.lineTo(-bw*0.5-neckLen*0.5+neckT, -bh*0.3-neckLen);
+  c.quadraticCurveTo(-bw*0.6+neckT, -bh*0.3-neckLen*0.5, -bw*0.6+neckT*1.5, -bh*0.3);
+  c.fill();
+
+  // Head
+  const hx = -bw*0.5-neckLen*0.5, hy = -bh*0.3-neckLen;
+  const hs = 18*s*recipe.head.size;
+  c.fillStyle = col.base;
+  c.beginPath(); c.ellipse(hx, hy, hs*1.3, hs, -0.3, 0, Math.PI*2); c.fill();
+  c.fillStyle = col.light;
+  c.beginPath(); c.ellipse(hx, hy-hs*0.2, hs*0.9, hs*0.5, -0.3, 0, Math.PI*2); c.fill();
+
+  // Eye
+  c.fillStyle = recipe.eyeGlow ? col.glow : '#fff';
+  c.beginPath(); c.arc(hx-hs*0.4, hy-hs*0.2, 3*s, 0, Math.PI*2); c.fill();
+  c.fillStyle = '#111';
+  c.beginPath(); c.arc(hx-hs*0.4, hy-hs*0.2, 1.5*s, 0, Math.PI*2); c.fill();
+
+  // Horns
+  if(recipe.horns.style!=='none') {
+    c.strokeStyle = col.dark; c.lineWidth = 2.5*s; c.lineCap = 'round';
+    const hornS = 14*s*recipe.horns.size;
+    c.beginPath(); c.moveTo(hx, hy-hs); c.lineTo(hx-hornS*0.3, hy-hs-hornS); c.stroke();
+    c.beginPath(); c.moveTo(hx+hs*0.4, hy-hs*0.7); c.lineTo(hx+hs*0.4+hornS*0.2, hy-hs*0.7-hornS*0.8); c.stroke();
+  }
+
+  // Fangs
+  if(recipe.fangs) {
+    c.fillStyle = '#ddd';
+    c.beginPath(); c.moveTo(hx-hs*0.8, hy+hs*0.3); c.lineTo(hx-hs*0.6, hy+hs*0.8); c.lineTo(hx-hs*0.4, hy+hs*0.3); c.fill();
+  }
+
+  // Legs
+  if(recipe.legs.count >= 2) {
+    c.strokeStyle = col.dark; c.lineWidth = 5*s; c.lineCap = 'round';
+    // front legs
+    c.beginPath(); c.moveTo(-bw*0.3, bh*0.6); c.lineTo(-bw*0.4, bh+18*s); c.stroke();
+    c.beginPath(); c.moveTo(-bw*0.1, bh*0.6); c.lineTo(-bw*0.15, bh+20*s); c.stroke();
+    // claws
+    const clawS = 4*s*recipe.legs.clawSize;
+    c.fillStyle = col.dark;
+    c.beginPath(); c.arc(-bw*0.4, bh+18*s, clawS, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(-bw*0.15, bh+20*s, clawS, 0, Math.PI*2); c.fill();
+  }
+  if(recipe.legs.count >= 4) {
+    c.strokeStyle = col.dark; c.lineWidth = 5*s; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(bw*0.1, bh*0.6); c.lineTo(bw*0.05, bh+18*s); c.stroke();
+    c.beginPath(); c.moveTo(bw*0.35, bh*0.6); c.lineTo(bw*0.4, bh+16*s); c.stroke();
+    const clawS = 4*s*recipe.legs.clawSize;
+    c.fillStyle = col.dark;
+    c.beginPath(); c.arc(bw*0.05, bh+18*s, clawS, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(bw*0.4, bh+16*s, clawS, 0, Math.PI*2); c.fill();
+  }
+
+  // Tail
+  const tailLen = 40*s*recipe.tail.length;
+  c.strokeStyle = col.base; c.lineWidth = 6*s*recipe.tail.thick; c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(bw*0.7, 0);
+  c.quadraticCurveTo(bw*0.7+tailLen*0.5, tailLen*0.3, bw*0.7+tailLen, tailLen*0.1);
+  c.stroke();
+  // tail tip
+  if(recipe.tail.style==='flame') {
+    c.fillStyle = col.glow;
+    c.beginPath(); c.arc(bw*0.7+tailLen, tailLen*0.1, 5*s, 0, Math.PI*2); c.fill();
+  } else if(recipe.tail.style==='spiked'||recipe.tail.style==='bladed') {
+    c.fillStyle = col.dark;
+    const tx = bw*0.7+tailLen, ty = tailLen*0.1;
+    c.beginPath(); c.moveTo(tx, ty-6*s); c.lineTo(tx+10*s, ty); c.lineTo(tx, ty+6*s); c.fill();
+  }
+
+  // Wings
+  if(recipe.wings.style!=='none') {
+    const wSpan = 50*s*recipe.wings.span;
+    c.fillStyle = col.base+'88';
+    c.strokeStyle = col.dark; c.lineWidth = 2*s;
+    c.beginPath();
+    c.moveTo(0, -bh*0.5);
+    c.quadraticCurveTo(-wSpan*0.3, -bh-wSpan*0.8, 0, -bh-wSpan*0.6);
+    c.quadraticCurveTo(wSpan*0.2, -bh-wSpan*0.3, wSpan*0.1, -bh*0.3);
+    c.fill(); c.stroke();
+    // second wing (behind)
+    c.globalAlpha = 0.5;
+    c.beginPath();
+    c.moveTo(bw*0.2, -bh*0.4);
+    c.quadraticCurveTo(bw*0.2-wSpan*0.2, -bh-wSpan*0.6, bw*0.2+wSpan*0.1, -bh-wSpan*0.4);
+    c.quadraticCurveTo(bw*0.2+wSpan*0.2, -bh-wSpan*0.1, bw*0.2+wSpan*0.15, -bh*0.2);
+    c.fill(); c.stroke();
+    c.globalAlpha = 1;
+  }
+
+  // Spines
+  if(recipe.spines) {
+    c.fillStyle = col.dark;
+    for(let i=0;i<5;i++) {
+      const sx = -bw*0.5+i*bw*0.25, sy = -bh;
+      c.beginPath(); c.moveTo(sx-3*s, sy); c.lineTo(sx, sy-8*s); c.lineTo(sx+3*s, sy); c.fill();
+    }
+  }
+
+  c.restore();
+}
+
+// Load saved monsters on startup
+loadCaughtMonsters();
 
 // ---- MAIN LOOP ----
 function loop() {
