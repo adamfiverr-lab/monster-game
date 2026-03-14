@@ -35,8 +35,36 @@
     position:relative; flex:1 1 60%; min-height:0;
     overflow:hidden;
     border-bottom: 2px solid var(--border);
+    perspective: 700px;
   }
   body.in-battle #sceneWrap { flex: 1 1 65%; }
+  body.in-battle #sceneWrap { perspective: none; }
+  body.in-expedition #scene {
+    transform: rotateX(22deg);
+    transform-origin: center 82%;
+  }
+
+  /* Virtual joystick */
+  #joystick {
+    position:absolute; bottom:18px; left:18px;
+    width:90px; height:90px; border-radius:50%;
+    background:rgba(255,255,255,0.06);
+    border:2px solid rgba(255,255,255,0.12);
+    display:none; z-index:10;
+    touch-action:none;
+    -webkit-user-select:none; user-select:none;
+  }
+  body.in-expedition #joystick { display:block; }
+  #joystickInner {
+    position:absolute; width:36px; height:36px;
+    border-radius:50%;
+    background:radial-gradient(circle, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.12) 100%);
+    top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+    transition: width 0.1s, height 0.1s;
+  }
+  #joystickInner.active { width:32px; height:32px; background:radial-gradient(circle, rgba(136,170,255,0.5) 0%, rgba(136,170,255,0.15) 100%); }
 
   /* HP bars overlaid on canvas */
   #hpOverlay {
@@ -519,6 +547,7 @@
 <div id="sceneWrap">
   <canvas id="scene"></canvas>
   <div id="flash"></div>
+  <div id="joystick"><div id="joystickInner"></div></div>
   <div id="expToast"></div>
   <div id="zoneBadge">Verdantia — Beach</div>
   <div id="hpOverlay">
@@ -650,11 +679,11 @@ const MAP_W = 64, MAP_H = 64;
 const TILE_PX = 48;
 const VIEW_RAD = 7;
 const ENCOUNTER_CHANCE = 0.16;
-const MOVE_SPEED = 4;
+const MOVE_SPEED = 5;
 
-// 2.5D perspective
-const TILT = 0.82; // Y compression (1 = flat top-down, lower = more tilted)
-const TILT_OFFSET = 0; // computed per frame
+// Virtual joystick state
+let joyActive = false, joyDx = 0, joyDy = 0;
+const JOY_RADIUS = 45, JOY_DEAD = 6;
 
 // Tile types
 const T = { VOID:0, GRASS:1, TALL:2, PATH:3, TREE:4, WATER:5, ROCK:6, WALL:7, SAND:8 };
@@ -943,40 +972,63 @@ function startExpedition() {
   document.getElementById('exploreUI').style.display = 'none';
   document.getElementById('zones').style.display = 'none';
   document.getElementById('expeditionUI').classList.add('active');
-  document.getElementById('expWalkPrompt').textContent = 'Tap to move';
+  document.getElementById('expWalkPrompt').textContent = 'Use joystick to move';
+  document.body.classList.add('in-expedition');
   updateExpUI();
   showWalkPrompt();
 
-  sceneCanvas.addEventListener('click', expTapHandler);
+  setupJoystick();
 }
 
-function expTapHandler(e) {
-  e.preventDefault();
-  if (gameState !== 'expedition' || !map.tiles) return;
-  if (mapInteracting) return;
+// ---- VIRTUAL JOYSTICK ----
+let joystickBound = false;
+function setupJoystick() {
+  if (joystickBound) return;
+  joystickBound = true;
+  const joy = document.getElementById('joystick');
+  const inner = document.getElementById('joystickInner');
 
-  const rect = sceneCanvas.getBoundingClientRect();
-  const tapX = e.clientX - rect.left;
-  const tapY = e.clientY - rect.top;
-
-  // Invert the 2.5D tilt transform to get world coordinates
-  const untiltedY = (tapY - H*(1-TILT)*0.4) / TILT;
-  const worldX = tapX + map.camX;
-  const worldY = untiltedY + map.camY;
-  const gx = Math.floor(worldX / TILE_PX);
-  const gy = Math.floor(worldY / TILE_PX);
-
-  if (gx<0||gx>=MAP_W||gy<0||gy>=MAP_H) return;
-  if (!isWalkable(tileAt(gx,gy))) return;
-
-  const path = findPath(map.gx, map.gy, gx, gy);
-  if (path.length > 0 && path.length <= 150) {
-    map.path = path;
-    map.moving = true;
-    map.tgx = gx; map.tgy = gy;
-    map.tapPing = 1;
-    hideWalkPrompt();
+  function onStart(e) {
+    e.preventDefault();
+    if (mapInteracting) return;
+    joyActive = true;
+    inner.classList.add('active');
+    onMove(e);
   }
+  function onMove(e) {
+    e.preventDefault();
+    if (!joyActive) return;
+    const touch = e.touches ? e.touches[0] : e;
+    const rect = joy.getBoundingClientRect();
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+    let dx = touch.clientX - cx;
+    let dy = touch.clientY - cy;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > JOY_RADIUS) { dx = dx/dist*JOY_RADIUS; dy = dy/dist*JOY_RADIUS; }
+    inner.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    if (dist < JOY_DEAD) { joyDx = 0; joyDy = 0; }
+    else {
+      const clamped = Math.min(dist, JOY_RADIUS);
+      joyDx = (dx/dist) * (clamped/JOY_RADIUS);
+      joyDy = (dy/dist) * (clamped/JOY_RADIUS);
+    }
+  }
+  function onEnd(e) {
+    e.preventDefault();
+    joyActive = false; joyDx = 0; joyDy = 0;
+    inner.classList.remove('active');
+    inner.style.transform = 'translate(-50%,-50%)';
+  }
+
+  joy.addEventListener('touchstart', onStart, {passive:false});
+  joy.addEventListener('touchmove', onMove, {passive:false});
+  joy.addEventListener('touchend', onEnd, {passive:false});
+  joy.addEventListener('touchcancel', onEnd, {passive:false});
+  // Mouse fallback for desktop testing
+  joy.addEventListener('mousedown', onStart);
+  window.addEventListener('mousemove', e => { if(joyActive) onMove(e); });
+  window.addEventListener('mouseup', e => { if(joyActive) onEnd(e); });
 }
 
 function updateExpUI() {
@@ -1037,7 +1089,7 @@ function handleTileArrival(gx, gy) {
   // Check object on this tile
   const obj = map.objects.find(o => o.gx===gx && o.gy===gy && !o.done);
   if (obj) {
-    map.path = []; map.moving = false;
+    map.moving = false;
     handleObjectInteraction(obj);
   }
 }
@@ -1111,51 +1163,79 @@ function handleObjectInteraction(obj) {
   }
 }
 
-// ---- PLAYER MOVEMENT ----
+// ---- PLAYER MOVEMENT (JOYSTICK) ----
+let footstepCD = 0;
 function updatePlayerMovement() {
-  if (!map.moving || map.path.length===0) { map.moving=false; return; }
+  if (mapInteracting) { map.moving = false; return; }
 
-  const next = map.path[0];
-  const tx = next.x*TILE_PX+TILE_PX/2;
-  const ty = next.y*TILE_PX+TILE_PX/2;
-  const dx = tx-map.px, dy = ty-map.py;
-  const dist = Math.sqrt(dx*dx+dy*dy);
+  if (joyActive && (Math.abs(joyDx) > 0.01 || Math.abs(joyDy) > 0.01)) {
+    const speed = MOVE_SPEED * (Math.sqrt(joyDx*joyDx + joyDy*joyDy));
+    const newPx = map.px + joyDx * speed;
+    const newPy = map.py + joyDy * speed;
 
-  // Update facing
-  if (Math.abs(dx)>Math.abs(dy)) map.facing = dx>0?1:3;
-  else map.facing = dy>0?2:0;
+    // Collision check — try X and Y independently for wall sliding
+    const margin = TILE_PX * 0.35; // collision margin from tile edges
+    // Test X movement
+    const testGxR = Math.floor((newPx + margin) / TILE_PX);
+    const testGxL = Math.floor((newPx - margin) / TILE_PX);
+    const curGy = Math.floor(map.py / TILE_PX);
+    if (testGxR >= 0 && testGxR < MAP_W && testGxL >= 0 && testGxL < MAP_W &&
+        isWalkable(tileAt(testGxR, curGy)) && isWalkable(tileAt(testGxL, curGy))) {
+      map.px = newPx;
+    }
+    // Test Y movement
+    const curGx = Math.floor(map.px / TILE_PX);
+    const testGyD = Math.floor((newPy + margin) / TILE_PX);
+    const testGyU = Math.floor((newPy - margin) / TILE_PX);
+    if (testGyD >= 0 && testGyD < MAP_H && testGyU >= 0 && testGyU < MAP_H &&
+        isWalkable(tileAt(curGx, testGyD)) && isWalkable(tileAt(curGx, testGyU))) {
+      map.py = newPy;
+    }
 
-  if (dist < MOVE_SPEED) {
-    map.px = tx; map.py = ty;
-    map.gx = next.x; map.gy = next.y;
-    map.path.shift();
-    revealAround(next.x, next.y);
-    // Footstep trail
-    map.footsteps.push({x:tx,y:ty,t:60});
-    if(map.footsteps.length>20) map.footsteps.shift();
-    handleTileArrival(next.x, next.y);
+    // Update facing
+    if (Math.abs(joyDx) > Math.abs(joyDy)) map.facing = joyDx > 0 ? 1 : 3;
+    else map.facing = joyDy > 0 ? 2 : 0;
+
+    const prevGx = map.gx, prevGy = map.gy;
+    map.gx = Math.floor(map.px / TILE_PX);
+    map.gy = Math.floor(map.py / TILE_PX);
+
+    // New tile arrived
+    if (prevGx !== map.gx || prevGy !== map.gy) {
+      revealAround(map.gx, map.gy);
+      handleTileArrival(map.gx, map.gy);
+      updateExpUI();
+    }
+
+    // Footstep particles
+    footstepCD--;
+    if (footstepCD <= 0) {
+      map.footsteps.push({x:map.px, y:map.py, t:50});
+      if (map.footsteps.length > 30) map.footsteps.shift();
+      footstepCD = 6;
+    }
+
+    map.moving = true;
   } else {
-    map.px += (dx/dist)*MOVE_SPEED;
-    map.py += (dy/dist)*MOVE_SPEED;
+    map.moving = false;
   }
 }
 
 function updateMapCamera() {
   const targetX = map.px - W/2;
-  const targetY = map.py - H/(2*TILT); // account for 2.5D Y compression
-  map.camX += (targetX-map.camX)*0.12;
-  map.camY += (targetY-map.camY)*0.12;
-  // Allow camera to go past edges (no hard boundary clamping)
-  // This prevents the jarring "wall" feel at map edges
+  const targetY = map.py - H*0.45; // slightly above center for 2.5D perspective
+  map.camX += (targetX-map.camX)*0.14;
+  map.camY += (targetY-map.camY)*0.14;
   const margin = TILE_PX * 3;
   map.camX = clamp(map.camX, -margin, Math.max(0, MAP_W*TILE_PX-W+margin));
-  map.camY = clamp(map.camY, -margin, Math.max(0, MAP_H*TILE_PX-H/TILT+margin));
+  map.camY = clamp(map.camY, -margin, Math.max(0, MAP_H*TILE_PX-H+margin));
 }
 
 // ---- EXPEDITION END ----
 function endExpedition() {
   gameState = 'explore';
-  sceneCanvas.removeEventListener('click', expTapHandler);
+  document.body.classList.remove('in-expedition');
+  joyActive = false; joyDx = 0; joyDy = 0;
   map.moving = false;
 
   const content = document.getElementById('summaryContent');
@@ -1174,6 +1254,7 @@ function dismissSummary() {
   document.getElementById('exploreUI').style.display = '';
   document.getElementById('zones').style.display = '';
   document.getElementById('exploreBtn').innerHTML = '<span class="shimmer"></span>Set Out';
+  document.body.classList.remove('in-expedition');
   map.tiles = null; map.seen = null; map.objects = [];
   map.particles = []; map.footsteps = [];
   playerMonster.currentHP = playerMonster.stats.hp;
@@ -1580,16 +1661,10 @@ function drawTopDownMap() {
     if(map.footsteps[i].t<=0) map.footsteps.splice(i,1);
   }
 
-  // ---- 2.5D TILT: apply Y compression ----
-  ctx.save();
-  ctx.translate(0, H*(1-TILT)*0.4);
-  ctx.scale(1, TILT);
-
-  const viewH = H / TILT; // visible height in world-space
   const startX = Math.max(0, Math.floor((map.camX-TP)/TP));
   const startY = Math.max(0, Math.floor((map.camY-TP)/TP));
   const endX = Math.min(MAP_W, startX+Math.ceil(W/TP)+3);
-  const endY = Math.min(MAP_H, startY+Math.ceil(viewH/TP)+3);
+  const endY = Math.min(MAP_H, startY+Math.ceil(H/TP)+4);
 
   // Draw tiles
   for (let gy=startY;gy<endY;gy++) {
@@ -1654,7 +1729,7 @@ function drawTopDownMap() {
   const visibleObjects = map.objects.filter(obj => {
     if (!map.seen[obj.gy*MAP_W+obj.gx]) return false;
     const sx = obj.gx*TP-map.camX, sy = obj.gy*TP-map.camY;
-    return sx>-TP*2&&sx<W+TP*2&&sy>-TP*2&&sy<viewH+TP*2;
+    return sx>-TP*2&&sx<W+TP*2&&sy>-TP*2&&sy<H+TP*2;
   });
   visibleObjects.sort((a,b) => a.gy - b.gy);
 
@@ -1700,7 +1775,7 @@ function drawTopDownMap() {
     p.y += p.vy;
     if(p.y<0) { p.y=MAP_H*TP; p.x=rng(0,MAP_W*TP); }
     const psx2=p.x-map.camX, psy2=p.y-map.camY;
-    if(psx2>-10&&psx2<W+10&&psy2>-10&&psy2<viewH+10){
+    if(psx2>-10&&psx2<W+10&&psy2>-10&&psy2<H+10){
       ctx.globalAlpha=p.alpha*(0.5+Math.sin(animT*0.03+p.phase)*0.5);
       ctx.fillStyle = currentZone==='cave'?'#6666aa':'#ffffff';
       ctx.beginPath(); ctx.arc(psx2,psy2,p.size,0,Math.PI*2); ctx.fill();
@@ -1708,10 +1783,7 @@ function drawTopDownMap() {
   }
   ctx.restore();
 
-  // ---- END 2.5D TILT ----
-  ctx.restore();
-
-  // Vignette (drawn in screen space, not tilted)
+  // Vignette
   ctx.save();
   const vig = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.3, W/2,H/2,Math.max(W,H)*0.6);
   vig.addColorStop(0,'transparent'); vig.addColorStop(1,'rgba(11,14,23,0.5)');
@@ -2940,7 +3012,8 @@ function startBattle() {
   battleAnim.enemySlideIn = 0;
   battleAnim.playerSlideIn = 0;
 
-  // switch UI
+  // switch UI — remove expedition perspective, add battle mode
+  document.body.classList.remove('in-expedition');
   document.body.classList.add('in-battle');
   exploreUI.style.display = 'none';
   document.getElementById('zones').style.display = 'none';
@@ -3135,10 +3208,12 @@ function dismissResult() {
   // Return to expedition if one is active
   if (map.tiles) {
     gameState = 'expedition';
+    document.body.classList.add('in-expedition');
     document.getElementById('expeditionUI').classList.add('active');
     enemyMonster = null;
     resumeMapExplore();
   } else {
+    document.body.classList.remove('in-expedition');
     document.getElementById('zones').style.display = '';
     exploreUI.style.display = '';
     exploreBtn.classList.remove('walking');
