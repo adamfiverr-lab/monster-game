@@ -376,6 +376,7 @@
     display:none; flex-direction:column; align-items:center;
     z-index:100; padding:20px 16px;
     overflow-y:auto; -webkit-overflow-scrolling:touch;
+    transition: background 0.3s;
   }
   #collectionOverlay.active { display:flex; }
   #collectionOverlay h2 {
@@ -417,6 +418,52 @@
     padding:40px 0; text-align:center;
     font-family:'Cinzel',serif;
     grid-column: 1 / -1;
+  }
+
+  /* Fusion bar */
+  #fusionBar {
+    display:flex; align-items:center; justify-content:center;
+    gap:8px; padding:10px 0 14px; flex:0 0 auto;
+    width:100%; max-width:360px;
+  }
+  .fuse-slot {
+    width:60px; height:60px; border-radius:10px;
+    background:var(--abyss); border:2px dashed var(--border);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; position:relative; overflow:hidden;
+  }
+  .fuse-slot span {
+    font-size:9px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:0.5px; font-family:'Cinzel',serif;
+  }
+  .fuse-slot.filled {
+    border-style:solid; border-color:var(--gold);
+    box-shadow:0 0 8px rgba(245,158,11,0.2);
+  }
+  .fuse-slot.filled span { display:none; }
+  .fuse-slot canvas { width:100%; height:100%; }
+  #fusePlus, #fuseEquals {
+    font-family:'Cinzel',serif; font-weight:900; font-size:20px;
+    color:var(--gold); flex:0 0 auto;
+  }
+  #fuseBtn {
+    padding:10px 18px; border:none; border-radius:10px;
+    font-family:'Cinzel',serif; font-weight:700; font-size:12px;
+    letter-spacing:1px; text-transform:uppercase;
+    background:linear-gradient(135deg, #92690a 0%, #b8860b 100%);
+    color:#fff; cursor:pointer;
+    box-shadow:0 2px 10px rgba(245,158,11,0.3);
+    transition: transform 0.1s;
+  }
+  #fuseBtn:active { transform:scale(0.97); }
+  #fuseBtn.disabled {
+    background:var(--card); color:var(--muted);
+    border:1px solid var(--border); box-shadow:none;
+    pointer-events:none;
+  }
+  .coll-card.selected {
+    border-color:var(--gold);
+    box-shadow:0 0 12px rgba(245,158,11,0.3);
   }
 
   /* Catch shake animation */
@@ -494,7 +541,7 @@
       Set Out
     </button>
     <div id="exploreStatus"></div>
-    <button id="collectionBtn" onclick="showCollection()">My Monsters <span id="collCount">0</span></button>
+    <button id="collectionBtn" onclick="showCollection()">Monsters &amp; Fuse <span id="collCount">0</span></button>
   </div>
 
   <div id="expeditionUI">
@@ -537,7 +584,14 @@
 </div>
 
 <div id="collectionOverlay">
-  <h2>My Monsters</h2>
+  <h2>Monsters &amp; Fusion</h2>
+  <div id="fusionBar">
+    <div id="fuseSlotA" class="fuse-slot" onclick="clearFuseSlot(0)"><span>Select</span></div>
+    <div id="fusePlus">+</div>
+    <div id="fuseSlotB" class="fuse-slot" onclick="clearFuseSlot(1)"><span>Select</span></div>
+    <div id="fuseEquals">=</div>
+    <button id="fuseBtn" class="disabled" onclick="fuseMonsters()">Fuse</button>
+  </div>
   <div id="collGrid"></div>
   <button onclick="hideCollection()">Close</button>
 </div>
@@ -582,11 +636,15 @@ let caughtMonsters = []; // array of full monster objects
 let catchTarget = null; // the monster we're trying to catch in battle
 
 // ---- TOP-DOWN FREE-ROAM EXPLORATION ----
-const MAP_W = 36, MAP_H = 36;
-const TILE_PX = 40;
+const MAP_W = 64, MAP_H = 64;
+const TILE_PX = 48;
 const VIEW_RAD = 7;
 const ENCOUNTER_CHANCE = 0.16;
-const MOVE_SPEED = 3.5;
+const MOVE_SPEED = 4;
+
+// 2.5D perspective
+const TILT = 0.82; // Y compression (1 = flat top-down, lower = more tilted)
+const TILT_OFFSET = 0; // computed per frame
 
 // Tile types
 const T = { VOID:0, GRASS:1, TALL:2, PATH:3, TREE:4, WATER:5, ROCK:6, WALL:7, SAND:8 };
@@ -647,26 +705,42 @@ function generateMap(zone) {
   // Fill with blocking
   tiles.fill(zt.block);
 
-  // Random walks to carve open space
-  for (let w = 0; w < 8; w++) {
-    let cx = Math.floor(MAP_W/2) + rng(-5,5);
-    let cy = Math.floor(MAP_H/2) + rng(-5,5);
-    for (let s = 0; s < 160; s++) {
+  // Organic boundary — define a soft oval boundary using distance from center
+  // Tiles outside this boundary stay blocking, creating natural edges
+  const cxMap = MAP_W/2, cyMap = MAP_H/2;
+  const radiusX = MAP_W*0.42, radiusY = MAP_H*0.42;
+
+  function inBounds(x,y) {
+    const dx = (x-cxMap)/radiusX, dy = (y-cyMap)/radiusY;
+    const d = dx*dx+dy*dy;
+    // Jagged boundary: add noise based on angle
+    const angle = Math.atan2(dy,dx);
+    const noise = Math.sin(angle*5)*0.08 + Math.sin(angle*11)*0.04;
+    return d < (1+noise)*(1+noise);
+  }
+
+  // Random walks to carve open space (more walkers, longer walks for bigger map)
+  for (let w = 0; w < 14; w++) {
+    let cx = Math.floor(MAP_W/2) + rng(-8,8);
+    let cy = Math.floor(MAP_H/2) + rng(-8,8);
+    for (let s = 0; s < 300; s++) {
       for (let dx = -1; dx <= 1; dx++)
         for (let dy = -1; dy <= 1; dy++) {
           const nx=cx+dx, ny=cy+dy;
-          if (nx>0&&nx<MAP_W-1&&ny>0&&ny<MAP_H-1) tiles[ny*MAP_W+nx] = zt.base;
+          if (nx>1&&nx<MAP_W-2&&ny>1&&ny<MAP_H-2 && inBounds(nx,ny))
+            tiles[ny*MAP_W+nx] = zt.base;
         }
       const d = rng(0,3);
-      if(d===0&&cy>2)cy--; if(d===1&&cy<MAP_H-3)cy++;
-      if(d===2&&cx>2)cx--; if(d===3&&cx<MAP_W-3)cx++;
+      if(d===0&&cy>3)cy--; if(d===1&&cy<MAP_H-4)cy++;
+      if(d===2&&cx>3)cx--; if(d===3&&cx<MAP_W-4)cx++;
     }
   }
 
-  // Cellular automata smoothing (2 passes)
-  for (let pass=0; pass<2; pass++) {
+  // Cellular automata smoothing (3 passes for bigger map)
+  for (let pass=0; pass<3; pass++) {
     const copy = new Uint8Array(tiles);
-    for (let y=1;y<MAP_H-1;y++) for (let x=1;x<MAP_W-1;x++) {
+    for (let y=2;y<MAP_H-2;y++) for (let x=2;x<MAP_W-2;x++) {
+      if (!inBounds(x,y)) continue;
       let open=0;
       for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++) {
         if (isWalkable(copy[(y+dy)*MAP_W+(x+dx)])) open++;
@@ -675,49 +749,49 @@ function generateMap(zone) {
     }
   }
 
-  // Carve a path from bottom-center to top area
-  let px = Math.floor(MAP_W/2), py = MAP_H-3;
-  tiles[py*MAP_W+px] = T.PATH;
-  while (py > 3) {
-    const r = Math.random();
-    if (r<0.5&&py>2) py--;
-    else if (r<0.75&&px<MAP_W-3) px++;
-    else if (px>2) px--;
-    tiles[py*MAP_W+px] = T.PATH;
-    if (Math.random()<0.3) { // widen path
-      if(px+1<MAP_W-1) tiles[py*MAP_W+px+1]=T.PATH;
-      if(px-1>0) tiles[py*MAP_W+px-1]=T.PATH;
+  // Carve winding paths across the map
+  for (let p=0; p<rng(2,3); p++) {
+    let px = rng(Math.floor(MAP_W*0.3), Math.floor(MAP_W*0.7));
+    let py = MAP_H-rng(6,10);
+    const targetY = rng(5,10);
+    while (py > targetY) {
+      if (inBounds(px,py)) tiles[py*MAP_W+px] = T.PATH;
+      const r = Math.random();
+      if (r<0.5&&py>3) py--;
+      else if (r<0.75&&px<MAP_W-5) px++;
+      else if (px>4) px--;
+      if (Math.random()<0.3 && inBounds(px+1,py)) tiles[py*MAP_W+px+1]=T.PATH;
+      if (Math.random()<0.3 && inBounds(px-1,py) && px>1) tiles[py*MAP_W+px-1]=T.PATH;
     }
   }
 
-  // Scatter tall grass (25% of open tiles)
+  // Scatter tall grass (20% of open tiles)
   for (let i=0;i<tiles.length;i++) {
-    if (tiles[i]===zt.base && Math.random()<0.25) tiles[i]=T.TALL;
+    if (tiles[i]===zt.base && Math.random()<0.20) tiles[i]=T.TALL;
   }
 
-  // Add water pools (more and bigger for larger map)
-  for (let w=0;w<rng(3,6);w++) {
-    const wx=rng(4,MAP_W-5), wy=rng(4,MAP_H-5);
-    const pr = rng(1,2); // pool radius
+  // Add water pools (scaled for bigger map)
+  for (let w=0;w<rng(5,10);w++) {
+    const wx=rng(8,MAP_W-9), wy=rng(8,MAP_H-9);
+    if (!inBounds(wx,wy)) continue;
+    const pr = rng(1,3);
     for (let dy=-pr;dy<=pr;dy++) for (let dx=-pr;dx<=pr;dx++) {
       if (dx*dx+dy*dy>pr*pr+1) continue;
       const tx=wx+dx, ty=wy+dy;
-      if (tx>0&&tx<MAP_W-1&&ty>0&&ty<MAP_H-1 && Math.random()<0.75 && tiles[ty*MAP_W+tx]!==T.PATH)
+      if (tx>1&&tx<MAP_W-2&&ty>1&&ty<MAP_H-2 && inBounds(tx,ty) && Math.random()<0.75 && tiles[ty*MAP_W+tx]!==T.PATH)
         tiles[ty*MAP_W+tx]=T.WATER;
     }
   }
 
-  // Keep borders as blocking
-  for (let x=0;x<MAP_W;x++) { tiles[x]=zt.block; tiles[(MAP_H-1)*MAP_W+x]=zt.block; }
-  for (let y=0;y<MAP_H;y++) { tiles[y*MAP_W]=zt.block; tiles[y*MAP_W+MAP_W-1]=zt.block; }
-
   map.tiles = tiles;
   map.seen = new Uint8Array(MAP_W*MAP_H);
 
-  // Find spawn point (bottom-center path tile)
-  map.gx = Math.floor(MAP_W/2); map.gy = MAP_H-3;
+  // Spawn near center-bottom of the playable area
+  map.gx = Math.floor(MAP_W/2); map.gy = Math.floor(MAP_H*0.7);
   // Ensure spawn is walkable
-  tiles[map.gy*MAP_W+map.gx] = T.PATH;
+  for (let dx=-1;dx<=1;dx++) for (let dy=-1;dy<=1;dy++) {
+    tiles[(map.gy+dy)*MAP_W+(map.gx+dx)] = T.PATH;
+  }
   map.px = map.gx*TILE_PX+TILE_PX/2;
   map.py = map.gy*TILE_PX+TILE_PX/2;
   map.path = []; map.moving = false;
@@ -728,14 +802,14 @@ function generateMap(zone) {
   placedSpots.add(map.gx+','+map.gy);
 
   function findSpot(minDist) {
-    for (let tries=0;tries<200;tries++) {
-      const gx=rng(2,MAP_W-3), gy=rng(2,MAP_H-3);
+    for (let tries=0;tries<400;tries++) {
+      const gx=rng(4,MAP_W-5), gy=rng(4,MAP_H-5);
+      if (!inBounds(gx,gy)) continue;
       if (!isWalkable(tiles[gy*MAP_W+gx])) continue;
       const key=gx+','+gy;
       if (placedSpots.has(key)) continue;
       const dx=gx-map.gx, dy=gy-map.gy;
       if (Math.sqrt(dx*dx+dy*dy)<minDist) continue;
-      // Check no other object within 3 tiles
       let tooClose = false;
       for (const k of placedSpots) {
         const [ox,oy]=k.split(',').map(Number);
@@ -748,44 +822,46 @@ function generateMap(zone) {
     return null;
   }
 
-  // Chests
-  for (let i=0;i<rng(4,7);i++) {
+  // Chests (scaled for bigger map)
+  for (let i=0;i<rng(7,12);i++) {
     const s=findSpot(3);
     if(s) map.objects.push({...s,type:'chest',data:pick(ITEMS[zone]),done:false});
   }
   // Campfires
-  for (let i=0;i<rng(2,4);i++) {
-    const s=findSpot(4);
+  for (let i=0;i<rng(4,7);i++) {
+    const s=findSpot(5);
     if(s) map.objects.push({...s,type:'campfire',done:false});
   }
   // NPCs
-  for (let i=0;i<rng(1,3);i++) {
-    const s=findSpot(4); if(s) map.objects.push({...s,type:'npc',done:false});
+  for (let i=0;i<rng(2,5);i++) {
+    const s=findSpot(5); if(s) map.objects.push({...s,type:'npc',done:false});
   }
-  // Visible monsters (all encounters are visible — no random ones)
-  for (let i=0;i<rng(8,14);i++) {
+  // Visible monsters (more for bigger map)
+  for (let i=0;i<rng(16,26);i++) {
     const s=findSpot(3);
     if(s) map.objects.push({...s,type:'monster',data:generateEnemy(),done:false});
   }
-  // Boss (far from spawn)
-  { const s=findSpot(10); if(s) {
-    const boss = generateEnemy();
-    boss.level = rng(12,18);
-    boss.stats.hp = 80+boss.level*8; boss.stats.atk = 25+boss.level*4; boss.stats.def = 15+boss.level*3;
-    boss.currentHP = boss.stats.hp;
-    boss.body.size = (boss.body?.size||1)*1.3; boss.body.bulk = (boss.body?.bulk||1)*1.2;
-    boss.moves.forEach(m => m.damage = Math.floor(m.damage*1.3));
-    const names = {beach:['Tidecrusher','Reefmaw'],forest:['Thornking','Mossfang'],
-      deepwoods:['Gloomfang','Rotcrown'],cave:['Deepjaw','Cavewyrm']};
-    boss.name = pick(names[zone]||names.forest);
-    map.objects.push({...s,type:'boss',data:boss,done:false});
-  }}
+  // Bosses (2 for bigger map)
+  for (let b=0;b<2;b++) {
+    const s=findSpot(12); if(s) {
+      const boss = generateEnemy();
+      boss.level = rng(12,18);
+      boss.stats.hp = 80+boss.level*8; boss.stats.atk = 25+boss.level*4; boss.stats.def = 15+boss.level*3;
+      boss.currentHP = boss.stats.hp;
+      boss.body.size = (boss.body?.size||1)*1.3; boss.body.bulk = (boss.body?.bulk||1)*1.2;
+      boss.moves.forEach(m => m.damage = Math.floor(m.damage*1.3));
+      const names = {beach:['Tidecrusher','Reefmaw'],forest:['Thornking','Mossfang'],
+        deepwoods:['Gloomfang','Rotcrown'],cave:['Deepjaw','Cavewyrm']};
+      boss.name = pick(names[zone]||names.forest);
+      map.objects.push({...s,type:'boss',data:boss,done:false});
+    }
+  }
 
   revealAround(map.gx, map.gy);
 
-  // Generate ambient particles
+  // Generate ambient particles (more for bigger map)
   map.particles = [];
-  for (let i=0;i<40;i++) {
+  for (let i=0;i<70;i++) {
     map.particles.push({
       x:rng(0,MAP_W*TILE_PX), y:rng(0,MAP_H*TILE_PX),
       vx:(Math.random()-0.5)*0.3, vy:-Math.random()*0.4-0.1,
@@ -840,7 +916,7 @@ function findPath(sx,sy,ex,ey) {
       open.push({x:nx,y:ny,g,f:g+h,p:cur});
     }
 
-    if (closed.size > 1200) return []; // safety limit
+    if (closed.size > 3000) return []; // safety limit for 64x64 map
   }
   return [];
 }
@@ -870,12 +946,13 @@ function expTapHandler(e) {
   if (mapInteracting) return;
 
   const rect = sceneCanvas.getBoundingClientRect();
-  const r = window.devicePixelRatio||1;
   const tapX = e.clientX - rect.left;
   const tapY = e.clientY - rect.top;
 
+  // Invert the 2.5D tilt transform to get world coordinates
+  const untiltedY = (tapY - H*(1-TILT)*0.4) / TILT;
   const worldX = tapX + map.camX;
-  const worldY = tapY + map.camY;
+  const worldY = untiltedY + map.camY;
   const gx = Math.floor(worldX / TILE_PX);
   const gy = Math.floor(worldY / TILE_PX);
 
@@ -883,7 +960,7 @@ function expTapHandler(e) {
   if (!isWalkable(tileAt(gx,gy))) return;
 
   const path = findPath(map.gx, map.gy, gx, gy);
-  if (path.length > 0 && path.length <= 80) {
+  if (path.length > 0 && path.length <= 150) {
     map.path = path;
     map.moving = true;
     map.tgx = gx; map.tgy = gy;
@@ -1055,11 +1132,14 @@ function updatePlayerMovement() {
 
 function updateMapCamera() {
   const targetX = map.px - W/2;
-  const targetY = map.py - H/2;
+  const targetY = map.py - H/(2*TILT); // account for 2.5D Y compression
   map.camX += (targetX-map.camX)*0.12;
   map.camY += (targetY-map.camY)*0.12;
-  map.camX = clamp(map.camX, 0, Math.max(0, MAP_W*TILE_PX-W));
-  map.camY = clamp(map.camY, 0, Math.max(0, MAP_H*TILE_PX-H));
+  // Allow camera to go past edges (no hard boundary clamping)
+  // This prevents the jarring "wall" feel at map edges
+  const margin = TILE_PX * 3;
+  map.camX = clamp(map.camX, -margin, Math.max(0, MAP_W*TILE_PX-W+margin));
+  map.camY = clamp(map.camY, -margin, Math.max(0, MAP_H*TILE_PX-H/TILT+margin));
 }
 
 // ---- EXPEDITION END ----
@@ -1490,10 +1570,16 @@ function drawTopDownMap() {
     if(map.footsteps[i].t<=0) map.footsteps.splice(i,1);
   }
 
-  const startX = Math.max(0, Math.floor(map.camX/TP));
-  const startY = Math.max(0, Math.floor(map.camY/TP));
-  const endX = Math.min(MAP_W, startX+Math.ceil(W/TP)+2);
-  const endY = Math.min(MAP_H, startY+Math.ceil(H/TP)+2);
+  // ---- 2.5D TILT: apply Y compression ----
+  ctx.save();
+  ctx.translate(0, H*(1-TILT)*0.4);
+  ctx.scale(1, TILT);
+
+  const viewH = H / TILT; // visible height in world-space
+  const startX = Math.max(0, Math.floor((map.camX-TP)/TP));
+  const startY = Math.max(0, Math.floor((map.camY-TP)/TP));
+  const endX = Math.min(MAP_W, startX+Math.ceil(W/TP)+3);
+  const endY = Math.min(MAP_H, startY+Math.ceil(viewH/TP)+3);
 
   // Draw tiles
   for (let gy=startY;gy<endY;gy++) {
@@ -1505,13 +1591,38 @@ function drawTopDownMap() {
     }
   }
 
+  // Draw 2.5D height on blocking tiles (trees/walls/rocks get a front face)
+  const heightPx = Math.floor(TP*0.35);
+  for (let gy=startY;gy<endY;gy++) {
+    for (let gx=startX;gx<endX;gx++) {
+      if (gx<0||gx>=MAP_W||gy<0||gy>=MAP_H) continue;
+      if (!map.seen[gy*MAP_W+gx]) continue;
+      const t = map.tiles[gy*MAP_W+gx];
+      if (t===T.TREE||t===T.WALL||t===T.ROCK) {
+        const sx = gx*TP-map.camX, sy = gy*TP-map.camY;
+        // Check if tile below is visible/walkable — show front face
+        const below = (gy+1<MAP_H) ? map.tiles[(gy+1)*MAP_W+gx] : T.VOID;
+        if (isWalkable(below) || below===T.WATER) {
+          const zt = ZONE_TILES[currentZone];
+          ctx.fillStyle = darken(t===T.TREE?zt.tree_c[1]:zt.block_c, 0.35);
+          ctx.fillRect(sx, sy+TP, TP, heightPx);
+          // Slight gradient on the face
+          ctx.save(); ctx.globalAlpha=0.15;
+          ctx.fillStyle='#000';
+          ctx.fillRect(sx, sy+TP+heightPx-3, TP, 3);
+          ctx.restore();
+        }
+      }
+    }
+  }
+
   // Draw footstep trail
   ctx.save();
   for(const fs of map.footsteps){
     const fsx=fs.x-map.camX, fsy=fs.y-map.camY;
     ctx.globalAlpha=fs.t/60*0.15;
     ctx.fillStyle='rgba(180,160,130,0.5)';
-    ctx.beginPath(); ctx.arc(fsx,fsy,2,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(fsx,fsy,2.5,0,Math.PI*2); ctx.fill();
   }
   ctx.restore();
 
@@ -1524,23 +1635,36 @@ function drawTopDownMap() {
       const pulse = Math.sin(animT*0.1+i*0.5)*0.5+0.5;
       ctx.globalAlpha = 0.1+pulse*0.15;
       ctx.fillStyle='#88aaff';
-      ctx.beginPath(); ctx.arc(psx,psy,2+pulse,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(psx,psy,2.5+pulse,0,Math.PI*2); ctx.fill();
     }
     ctx.restore();
   }
 
-  // Draw objects
-  for (const obj of map.objects) {
-    if (!map.seen[obj.gy*MAP_W+obj.gx]) continue;
+  // Draw objects (sorted by Y for proper depth ordering)
+  const visibleObjects = map.objects.filter(obj => {
+    if (!map.seen[obj.gy*MAP_W+obj.gx]) return false;
     const sx = obj.gx*TP-map.camX, sy = obj.gy*TP-map.camY;
-    if (sx>-TP&&sx<W+TP&&sy>-TP&&sy<H+TP) {
-      drawMapObject(obj, sx, sy);
-    }
+    return sx>-TP*2&&sx<W+TP*2&&sy>-TP*2&&sy<viewH+TP*2;
+  });
+  visibleObjects.sort((a,b) => a.gy - b.gy);
+
+  // Draw objects that are behind the player
+  for (const obj of visibleObjects) {
+    if (obj.gy >= map.gy) continue;
+    const sx = obj.gx*TP-map.camX, sy = obj.gy*TP-map.camY;
+    drawMapObject(obj, sx, sy);
   }
 
   // Draw player
   const psx = map.px-map.camX, psy = map.py-map.camY;
   drawPlayerTopDown(psx, psy);
+
+  // Draw objects that are in front of or at player Y
+  for (const obj of visibleObjects) {
+    if (obj.gy < map.gy) continue;
+    const sx = obj.gx*TP-map.camX, sy = obj.gy*TP-map.camY;
+    drawMapObject(obj, sx, sy);
+  }
 
   // Tap destination ping
   if(map.tapPing>0 && map.tgx>=0) {
@@ -1550,7 +1674,6 @@ function drawTopDownMap() {
     ctx.globalAlpha=map.tapPing*0.5;
     ctx.strokeStyle='#88aaff'; ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.arc(tpx,tpy,r,0,Math.PI*2); ctx.stroke();
-    // Inner dot
     ctx.globalAlpha=map.tapPing*0.6;
     ctx.fillStyle='#88aaff';
     ctx.beginPath(); ctx.arc(tpx,tpy,3,0,Math.PI*2); ctx.fill();
@@ -1567,7 +1690,7 @@ function drawTopDownMap() {
     p.y += p.vy;
     if(p.y<0) { p.y=MAP_H*TP; p.x=rng(0,MAP_W*TP); }
     const psx2=p.x-map.camX, psy2=p.y-map.camY;
-    if(psx2>-10&&psx2<W+10&&psy2>-10&&psy2<H+10){
+    if(psx2>-10&&psx2<W+10&&psy2>-10&&psy2<viewH+10){
       ctx.globalAlpha=p.alpha*(0.5+Math.sin(animT*0.03+p.phase)*0.5);
       ctx.fillStyle = currentZone==='cave'?'#6666aa':'#ffffff';
       ctx.beginPath(); ctx.arc(psx2,psy2,p.size,0,Math.PI*2); ctx.fill();
@@ -1575,19 +1698,22 @@ function drawTopDownMap() {
   }
   ctx.restore();
 
-  // Vignette
+  // ---- END 2.5D TILT ----
+  ctx.restore();
+
+  // Vignette (drawn in screen space, not tilted)
   ctx.save();
-  const vig = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.3, W/2,H/2,Math.max(W,H)*0.65);
-  vig.addColorStop(0,'transparent'); vig.addColorStop(1,'rgba(11,14,23,0.55)');
+  const vig = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.3, W/2,H/2,Math.max(W,H)*0.6);
+  vig.addColorStop(0,'transparent'); vig.addColorStop(1,'rgba(11,14,23,0.5)');
   ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
   ctx.restore();
 
-  // Minimap
+  // Minimap (drawn in screen space)
   drawMinimap();
 }
 
 function drawMinimap() {
-  const mw=70, mh=70;
+  const mw=80, mh=80;
   const mx=W-mw-10, my=10;
   const ts=mw/MAP_W;
 
@@ -3077,51 +3203,195 @@ function loadCaughtMonsters() {
   } catch(e) {}
 }
 
+let fuseSelection = [null, null]; // indices into caughtMonsters
+
 function showCollection() {
+  fuseSelection = [null, null];
   const overlay = document.getElementById('collectionOverlay');
+  rebuildCollectionGrid();
+  updateFuseSlots();
+  overlay.classList.add('active');
+}
+
+function rebuildCollectionGrid() {
   const grid = document.getElementById('collGrid');
   grid.innerHTML = '';
 
   if (caughtMonsters.length === 0) {
-    grid.innerHTML = '<div id="collEmpty">No monsters caught yet.<br>Explore and battle to catch them!</div>';
-  } else {
-    caughtMonsters.forEach((mon, idx) => {
-      const card = document.createElement('div');
-      card.className = 'coll-card';
-
-      const cvs = document.createElement('canvas');
-      const size = 140;
-      const dpr = window.devicePixelRatio || 1;
-      cvs.width = size * dpr;
-      cvs.height = size * dpr;
-      cvs.style.width = size + 'px';
-      cvs.style.height = size + 'px';
-      const c = cvs.getContext('2d');
-      c.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      // Draw creature on mini canvas
-      drawCreatureOnCanvas(c, mon, size/2, size*0.55, size*0.004, false);
-
-      const nameDiv = document.createElement('div');
-      nameDiv.className = 'coll-name';
-      nameDiv.textContent = mon.name;
-
-      const infoDiv = document.createElement('div');
-      infoDiv.className = 'coll-info';
-      infoDiv.textContent = `Lv${mon.level} · ${mon.type}`;
-
-      card.appendChild(cvs);
-      card.appendChild(nameDiv);
-      card.appendChild(infoDiv);
-      grid.appendChild(card);
-    });
+    grid.innerHTML = '<div id="collEmpty">No monsters caught yet.<br>Explore and catch them!</div>';
+    return;
   }
 
-  overlay.classList.add('active');
+  caughtMonsters.forEach((mon, idx) => {
+    const card = document.createElement('div');
+    card.className = 'coll-card';
+    if (fuseSelection[0]===idx || fuseSelection[1]===idx) card.classList.add('selected');
+
+    const cvs = document.createElement('canvas');
+    const size = 130;
+    const dpr = window.devicePixelRatio || 1;
+    cvs.width = size * dpr;
+    cvs.height = size * dpr;
+    cvs.style.width = size + 'px';
+    cvs.style.height = size + 'px';
+    const c = cvs.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawCreatureOnCanvas(c, mon, size/2, size*0.55, size*0.004, false);
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'coll-name';
+    nameDiv.textContent = mon.name;
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'coll-info';
+    infoDiv.textContent = `Lv${mon.level} · ${mon.type} · HP${mon.stats.hp} ATK${mon.stats.atk}`;
+
+    card.addEventListener('click', () => selectForFusion(idx));
+    card.appendChild(cvs);
+    card.appendChild(nameDiv);
+    card.appendChild(infoDiv);
+    grid.appendChild(card);
+  });
+}
+
+function selectForFusion(idx) {
+  // If already selected, deselect
+  if (fuseSelection[0]===idx) { fuseSelection[0]=null; }
+  else if (fuseSelection[1]===idx) { fuseSelection[1]=null; }
+  // Otherwise fill first empty slot
+  else if (fuseSelection[0]===null) { fuseSelection[0]=idx; }
+  else if (fuseSelection[1]===null) { fuseSelection[1]=idx; }
+  else { fuseSelection[0]=idx; } // replace first slot
+
+  rebuildCollectionGrid();
+  updateFuseSlots();
+}
+
+function clearFuseSlot(slotIdx) {
+  fuseSelection[slotIdx] = null;
+  rebuildCollectionGrid();
+  updateFuseSlots();
+}
+
+function updateFuseSlots() {
+  const slotA = document.getElementById('fuseSlotA');
+  const slotB = document.getElementById('fuseSlotB');
+  const fuseBtn = document.getElementById('fuseBtn');
+
+  [slotA, slotB].forEach((slot, i) => {
+    slot.innerHTML = '';
+    if (fuseSelection[i] !== null && caughtMonsters[fuseSelection[i]]) {
+      const mon = caughtMonsters[fuseSelection[i]];
+      slot.classList.add('filled');
+      const cvs = document.createElement('canvas');
+      const size = 56;
+      const dpr = window.devicePixelRatio || 1;
+      cvs.width = size * dpr; cvs.height = size * dpr;
+      cvs.style.width = size + 'px'; cvs.style.height = size + 'px';
+      const c = cvs.getContext('2d');
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawCreatureOnCanvas(c, mon, size/2, size*0.55, size*0.003, false);
+      slot.appendChild(cvs);
+    } else {
+      slot.classList.remove('filled');
+      slot.innerHTML = '<span>Select</span>';
+    }
+  });
+
+  // Enable fuse button only when both slots filled
+  if (fuseSelection[0] !== null && fuseSelection[1] !== null) {
+    fuseBtn.classList.remove('disabled');
+  } else {
+    fuseBtn.classList.add('disabled');
+  }
+}
+
+function fuseMonsters() {
+  if (fuseSelection[0]===null || fuseSelection[1]===null) return;
+  if (fuseSelection[0]===fuseSelection[1]) return;
+
+  const a = caughtMonsters[fuseSelection[0]];
+  const b = caughtMonsters[fuseSelection[1]];
+
+  // Create fused monster — inherits traits from both parents
+  const fused = JSON.parse(JSON.stringify(a)); // start with parent A's structure
+
+  // Name: combine syllables from both parents
+  const nameA = a.name, nameB = b.name;
+  const midA = Math.ceil(nameA.length/2), midB = Math.floor(nameB.length/2);
+  fused.name = nameA.slice(0,midA) + nameB.slice(midB);
+
+  // Level: max of both + 1
+  fused.level = Math.max(a.level, b.level) + 1;
+
+  // Type: randomly from either parent
+  fused.type = Math.random() < 0.5 ? a.type : b.type;
+  fused.colors = fused.type === a.type ? {...a.colors} : {...b.colors};
+
+  // Stats: average + 15% bonus
+  fused.stats = {
+    hp: Math.floor((a.stats.hp + b.stats.hp) / 2 * 1.15),
+    atk: Math.floor((a.stats.atk + b.stats.atk) / 2 * 1.15),
+    def: Math.floor((a.stats.def + b.stats.def) / 2 * 1.15),
+    spd: Math.floor((a.stats.spd + b.stats.spd) / 2 * 1.15),
+  };
+  fused.currentHP = fused.stats.hp;
+
+  // Moves: pick best 4 from combined pool (highest damage)
+  const allMoves = [...a.moves, ...b.moves].sort((x,y) => y.damage - x.damage);
+  const seen = new Set();
+  fused.moves = [];
+  for (const m of allMoves) {
+    if (!seen.has(m.name) && fused.moves.length < 4) {
+      fused.moves.push({...m, type: fused.type, damage: Math.floor(m.damage * 1.1)});
+      seen.add(m.name);
+    }
+  }
+
+  // Body: mix parts from both parents
+  fused.body = {
+    size: (a.body.size + b.body.size) / 2 * 1.05,
+    bulk: (a.body.bulk + b.body.bulk) / 2 * 1.05,
+  };
+  fused.head = Math.random()<0.5 ? {...a.head} : {...b.head};
+  fused.neck = Math.random()<0.5 ? {...a.neck} : {...b.neck};
+  fused.legs = Math.random()<0.5 ? {...a.legs} : {...b.legs};
+  fused.wings = a.wings.style!=='none' ? {...a.wings} : {...b.wings};
+  fused.tail = Math.random()<0.5 ? {...a.tail} : {...b.tail};
+  fused.horns = a.horns.style!=='none' ? {...a.horns} : {...b.horns};
+  fused.armor = Math.random()<0.5 ? a.armor : b.armor;
+  fused.spines = a.spines || b.spines;
+  fused.fangs = a.fangs || b.fangs;
+  fused.eyeGlow = a.eyeGlow || b.eyeGlow;
+
+  // Remove parents (higher index first to avoid shifting issues)
+  const indices = [fuseSelection[0], fuseSelection[1]].sort((a,b) => b-a);
+  caughtMonsters.splice(indices[0], 1);
+  caughtMonsters.splice(indices[1], 1);
+
+  // Add fused monster
+  caughtMonsters.push(fused);
+  saveCaughtMonsters();
+  document.getElementById('collCount').textContent = caughtMonsters.length;
+
+  // Show result
+  fuseSelection = [null, null];
+
+  // Flash effect and show the new monster
+  const overlay = document.getElementById('collectionOverlay');
+  overlay.style.background = 'rgba(245,158,11,0.3)';
+  setTimeout(() => {
+    overlay.style.background = '';
+    rebuildCollectionGrid();
+    updateFuseSlots();
+    // Scroll to bottom to show new monster
+    document.getElementById('collGrid').lastElementChild?.scrollIntoView({behavior:'smooth'});
+  }, 400);
 }
 
 function hideCollection() {
   document.getElementById('collectionOverlay').classList.remove('active');
+  fuseSelection = [null, null];
 }
 
 // Draw creature on any canvas context (reusable for collection)
