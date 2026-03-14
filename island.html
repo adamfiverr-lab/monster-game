@@ -40,8 +40,7 @@
   body.in-battle #sceneWrap { flex: 1 1 65%; }
   body.in-battle #sceneWrap { perspective: none; }
   body.in-expedition #scene {
-    transform: rotateX(22deg);
-    transform-origin: center 82%;
+    /* Mode 7 handles its own perspective — no CSS transform */
   }
 
   /* Virtual joystick */
@@ -54,7 +53,7 @@
     touch-action:none;
     -webkit-user-select:none; user-select:none;
   }
-  body.in-expedition #joystick { display:block; }
+  body.in-expedition #joystick { display:none; }
   #joystickInner {
     position:absolute; width:36px; height:36px;
     border-radius:50%;
@@ -681,6 +680,12 @@ const VIEW_RAD = 7;
 const ENCOUNTER_CHANCE = 0.16;
 const MOVE_SPEED = 5;
 
+// Mode 7 camera constants
+const CAM_HEIGHT = 120;
+const CAM_BEHIND = 60;
+const CAM_FOV_FACTOR = 0.8;
+const VIEW_RAD_3D = 14;
+
 // Virtual joystick state
 let joyActive = false, joyDx = 0, joyDy = 0;
 const JOY_RADIUS = 45, JOY_DEAD = 6;
@@ -694,6 +699,7 @@ const map = {
   tgx:-1, tgy:-1, // target (for tap marker)
   path:[], moving:false, facing:1, // 0=up 1=right 2=down 3=left
   camX:0, camY:0,
+  angle: Math.PI / 2, // player facing direction (radians)
   tapPing:0, // 0-1 ping animation at target
   particles:[], // ambient map particles
   footsteps:[], // {x,y,t} footprint trail
@@ -972,12 +978,13 @@ function startExpedition() {
   document.getElementById('exploreUI').style.display = 'none';
   document.getElementById('zones').style.display = 'none';
   document.getElementById('expeditionUI').classList.add('active');
-  document.getElementById('expWalkPrompt').textContent = 'Use joystick to move';
+  document.getElementById('expWalkPrompt').textContent = 'Tap to move';
   document.body.classList.add('in-expedition');
+  map.angle = Math.PI / 2;
   updateExpUI();
   showWalkPrompt();
 
-  setupJoystick();
+  setupCanvasTapHandler();
 }
 
 // ---- VIRTUAL JOYSTICK ----
@@ -1163,54 +1170,59 @@ function handleObjectInteraction(obj) {
   }
 }
 
-// ---- PLAYER MOVEMENT (JOYSTICK) ----
+// ---- PLAYER MOVEMENT (PATH-FOLLOWING) ----
 let footstepCD = 0;
 function updatePlayerMovement() {
   if (mapInteracting) { map.moving = false; return; }
 
-  if (joyActive && (Math.abs(joyDx) > 0.01 || Math.abs(joyDy) > 0.01)) {
-    const speed = MOVE_SPEED * (Math.sqrt(joyDx*joyDx + joyDy*joyDy));
-    const newPx = map.px + joyDx * speed;
-    const newPy = map.py + joyDy * speed;
+  if (map.path.length > 0) {
+    const target = map.path[0];
+    const targetPx = target.x * TILE_PX + TILE_PX / 2;
+    const targetPy = target.y * TILE_PX + TILE_PX / 2;
+    const dx = targetPx - map.px;
+    const dy = targetPy - map.py;
+    const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Collision check — try X and Y independently for wall sliding
-    const margin = TILE_PX * 0.35; // collision margin from tile edges
-    // Test X movement
-    const testGxR = Math.floor((newPx + margin) / TILE_PX);
-    const testGxL = Math.floor((newPx - margin) / TILE_PX);
-    const curGy = Math.floor(map.py / TILE_PX);
-    if (testGxR >= 0 && testGxR < MAP_W && testGxL >= 0 && testGxL < MAP_W &&
-        isWalkable(tileAt(testGxR, curGy)) && isWalkable(tileAt(testGxL, curGy))) {
-      map.px = newPx;
-    }
-    // Test Y movement
-    const curGx = Math.floor(map.px / TILE_PX);
-    const testGyD = Math.floor((newPy + margin) / TILE_PX);
-    const testGyU = Math.floor((newPy - margin) / TILE_PX);
-    if (testGyD >= 0 && testGyD < MAP_H && testGyU >= 0 && testGyU < MAP_H &&
-        isWalkable(tileAt(curGx, testGyD)) && isWalkable(tileAt(curGx, testGyU))) {
-      map.py = newPy;
-    }
+    if (dist < MOVE_SPEED + 1) {
+      // Reached waypoint
+      map.px = targetPx;
+      map.py = targetPy;
+      map.path.shift();
 
-    // Update facing
-    if (Math.abs(joyDx) > Math.abs(joyDy)) map.facing = joyDx > 0 ? 1 : 3;
-    else map.facing = joyDy > 0 ? 2 : 0;
+      const prevGx = map.gx, prevGy = map.gy;
+      map.gx = target.x;
+      map.gy = target.y;
 
-    const prevGx = map.gx, prevGy = map.gy;
-    map.gx = Math.floor(map.px / TILE_PX);
-    map.gy = Math.floor(map.py / TILE_PX);
-
-    // New tile arrived
-    if (prevGx !== map.gx || prevGy !== map.gy) {
-      revealAround(map.gx, map.gy);
-      handleTileArrival(map.gx, map.gy);
-      updateExpUI();
+      if (prevGx !== map.gx || prevGy !== map.gy) {
+        revealAround(map.gx, map.gy);
+        handleTileArrival(map.gx, map.gy);
+        updateExpUI();
+      }
+    } else {
+      // Move toward waypoint
+      map.px += (dx / dist) * MOVE_SPEED;
+      map.py += (dy / dist) * MOVE_SPEED;
     }
 
-    // Footstep particles
+    // Smooth angle rotation toward movement direction
+    const moveAngle = Math.atan2(dy, dx);
+    let angleDiff = moveAngle - map.angle;
+    // Wrap to [-PI, PI]
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    map.angle += angleDiff * 0.12;
+
+    // Update facing (for compatibility)
+    const facingAngle = map.angle % (Math.PI * 2);
+    if (facingAngle < Math.PI * 0.25 || facingAngle > Math.PI * 1.75) map.facing = 1;
+    else if (facingAngle < Math.PI * 0.75) map.facing = 2;
+    else if (facingAngle < Math.PI * 1.25) map.facing = 3;
+    else map.facing = 0;
+
+    // Footstep particles every 6 frames
     footstepCD--;
     if (footstepCD <= 0) {
-      map.footsteps.push({x:map.px, y:map.py, t:50});
+      map.footsteps.push({ x: map.px, y: map.py, t: 50 });
       if (map.footsteps.length > 30) map.footsteps.shift();
       footstepCD = 6;
     }
@@ -1219,6 +1231,68 @@ function updatePlayerMovement() {
   } else {
     map.moving = false;
   }
+}
+
+// ---- TAP-TO-WALK INPUT ----
+let tapHandlerBound = false;
+function setupCanvasTapHandler() {
+  if (tapHandlerBound) return;
+  tapHandlerBound = true;
+  const canvas = document.getElementById('scene');
+
+  function handleTap(clientX, clientY) {
+    if (mapInteracting) return;
+    if (gameState !== 'expedition') return;
+
+    const rect = canvas.getBoundingClientRect();
+    const r = window.devicePixelRatio || 1;
+    const screenX = (clientX - rect.left) * (canvas.width / rect.width) / r;
+    const screenY = (clientY - rect.top) * (canvas.height / rect.height) / r;
+
+    // Check if tapping player character area (stop walking)
+    const playerScreenX = W / 2;
+    const playerScreenY = H * 0.72;
+    const dx = screenX - playerScreenX;
+    const dy = screenY - playerScreenY;
+    if (dx * dx + dy * dy < 30 * 30) {
+      map.path = [];
+      map.moving = false;
+      return;
+    }
+
+    // Convert screen tap to world coordinates
+    _camCos = Math.cos(map.angle);
+    _camSin = Math.sin(map.angle);
+    const world = screenToWorld(screenX, screenY);
+    if (!world) return;
+
+    const tgx = Math.floor(world.x / TILE_PX);
+    const tgy = Math.floor(world.y / TILE_PX);
+
+    if (tgx < 0 || tgx >= MAP_W || tgy < 0 || tgy >= MAP_H) return;
+    if (!isWalkable(tileAt(tgx, tgy))) return;
+
+    const path = findPath(map.gx, map.gy, tgx, tgy);
+    if (path.length > 0) {
+      map.path = path;
+      map.tgx = tgx;
+      map.tgy = tgy;
+      map.tapPing = 1;
+      map.moving = true;
+    }
+  }
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (gameState !== 'expedition') return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    handleTap(touch.clientX, touch.clientY);
+  }, { passive: false });
+
+  canvas.addEventListener('click', (e) => {
+    if (gameState !== 'expedition') return;
+    handleTap(e.clientX, e.clientY);
+  });
 }
 
 function updateMapCamera() {
@@ -1645,7 +1719,472 @@ function drawFog(startX, startY, endX, endY) {
   }
 }
 
-// ---- MAIN TOP-DOWN DRAW ----
+// ---- MODE 7 PROJECTION ----
+let _camCos = 1, _camSin = 0; // cached per frame
+
+function projectToScreen(worldX, worldY) {
+  // World position relative to camera
+  const dx = worldX - map.px;
+  const dy = worldY - map.py;
+  // Rotate into camera space (camera looks along map.angle)
+  const rx = dx * _camCos + dy * _camSin;   // forward/back
+  const ry = -dx * _camSin + dy * _camCos;  // left/right
+
+  const dist = rx + CAM_BEHIND; // distance from camera along view axis
+  if (dist < 1) return null; // behind camera
+
+  const horizonY = H * 0.35;
+  const fov = W * CAM_FOV_FACTOR;
+  const screenX = W / 2 + (ry * fov) / dist;
+  const screenY = horizonY + (CAM_HEIGHT * fov) / dist;
+
+  return { x: screenX, y: screenY, dist: dist };
+}
+
+function screenToWorld(screenX, screenY) {
+  const horizonY = H * 0.35;
+  if (screenY <= horizonY) return null; // above horizon
+
+  const fov = W * CAM_FOV_FACTOR;
+  const dist = (CAM_HEIGHT * fov) / (screenY - horizonY);
+  const ry = (screenX - W / 2) * dist / fov;
+  const rx = dist - CAM_BEHIND;
+
+  // Rotate back to world space
+  const worldX = map.px + rx * _camCos - ry * _camSin;
+  const worldY = map.py + rx * _camSin + ry * _camCos;
+  return { x: worldX, y: worldY };
+}
+
+// ---- MODE 7 3D DRAW ----
+function drawMode7Map() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0b0e17';
+  ctx.fillRect(0, 0, W, H);
+
+  // Cache trig
+  _camCos = Math.cos(map.angle);
+  _camSin = Math.sin(map.angle);
+
+  // Decay tap ping
+  if (map.tapPing > 0) map.tapPing = Math.max(0, map.tapPing - 0.02);
+
+  // Decay footsteps
+  for (let i = map.footsteps.length - 1; i >= 0; i--) {
+    map.footsteps[i].t--;
+    if (map.footsteps[i].t <= 0) map.footsteps.splice(i, 1);
+  }
+
+  const b = BIOMES[currentZone];
+  const horizonY = H * 0.35;
+
+  // --- SKY ---
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
+  b.sky.forEach((c, i) => skyGrad.addColorStop(i / (b.sky.length - 1), c));
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, horizonY + 1);
+
+  // --- DISTANT TERRAIN with rotational parallax ---
+  ctx.save();
+  scrollOffset = map.angle * 200;
+  drawDistantTerrain(b);
+  drawMidTerrain(b);
+  ctx.restore();
+
+  // --- GROUND TILES ---
+  const zt = ZONE_TILES[currentZone];
+  const fov = W * CAM_FOV_FACTOR;
+
+  // Collect visible tiles, project, and sort back-to-front
+  const tileQuads = [];
+  for (let dy = -VIEW_RAD_3D; dy <= VIEW_RAD_3D; dy++) {
+    for (let dx = -VIEW_RAD_3D; dx <= VIEW_RAD_3D; dx++) {
+      const gx = map.gx + dx;
+      const gy = map.gy + dy;
+      if (gx < 0 || gx >= MAP_W || gy < 0 || gy >= MAP_H) continue;
+      if (!map.seen[gy * MAP_W + gx]) continue;
+
+      // Center of tile in world coords
+      const wcx = gx * TILE_PX + TILE_PX / 2;
+      const wcy = gy * TILE_PX + TILE_PX / 2;
+      const center = projectToScreen(wcx, wcy);
+      if (!center) continue;
+      if (center.y < horizonY - 10 || center.y > H + 50) continue;
+      if (center.x < -200 || center.x > W + 200) continue;
+
+      // Project 4 corners
+      const half = TILE_PX / 2 + 0.5; // slight expand to avoid gaps
+      const c0 = projectToScreen(gx * TILE_PX - 0.5, gy * TILE_PX - 0.5);
+      const c1 = projectToScreen((gx + 1) * TILE_PX + 0.5, gy * TILE_PX - 0.5);
+      const c2 = projectToScreen((gx + 1) * TILE_PX + 0.5, (gy + 1) * TILE_PX + 0.5);
+      const c3 = projectToScreen(gx * TILE_PX - 0.5, (gy + 1) * TILE_PX + 0.5);
+
+      if (!c0 || !c1 || !c2 || !c3) continue;
+
+      tileQuads.push({ gx, gy, center, corners: [c0, c1, c2, c3], dist: center.dist, tile: map.tiles[gy * MAP_W + gx] });
+    }
+  }
+
+  // Sort back-to-front (far tiles first)
+  tileQuads.sort((a, b) => b.dist - a.dist);
+
+  // Draw tile quads
+  for (const q of tileQuads) {
+    const t = q.tile;
+    const v = ((q.gx * 7 + q.gy * 13) & 7);
+    const [c0, c1, c2, c3] = q.corners;
+
+    // Pick tile color
+    let color;
+    if (t === T.WATER) {
+      const wt2 = animT * 0.03 + q.gx * 0.7 + q.gy * 0.5;
+      color = (Math.sin(wt2) > 0) ? zt.water[0] : zt.water[1];
+    } else if (t === T.GRASS || t === T.SAND) {
+      color = zt.grass[v % zt.grass.length];
+    } else if (t === T.TALL) {
+      color = zt.tall ? zt.tall[v % zt.tall.length] : zt.grass[v % zt.grass.length];
+    } else if (t === T.PATH) {
+      color = zt.path[v % zt.path.length];
+    } else if (t === T.TREE || t === T.WALL || t === T.ROCK) {
+      color = zt.grass[0]; // ground under blocking tile
+    } else {
+      continue;
+    }
+
+    // Distance darkening
+    const maxDist = VIEW_RAD_3D * TILE_PX;
+    const distFactor = Math.max(0, 1 - (q.dist - CAM_BEHIND) / maxDist * 0.6);
+
+    ctx.save();
+    ctx.globalAlpha = distFactor;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(c0.x, c0.y);
+    ctx.lineTo(c1.x, c1.y);
+    ctx.lineTo(c2.x, c2.y);
+    ctx.lineTo(c3.x, c3.y);
+    ctx.closePath();
+    ctx.fill();
+
+    // Water ripple effect
+    if (t === T.WATER && q.dist < maxDist * 0.7) {
+      ctx.globalAlpha = distFactor * 0.15;
+      ctx.strokeStyle = '#aaddff';
+      ctx.lineWidth = 0.8;
+      const midY = (c0.y + c2.y) / 2;
+      const midX = (c0.x + c1.x) / 2;
+      ctx.beginPath();
+      ctx.moveTo(c0.x, midY);
+      ctx.quadraticCurveTo(midX, midY - 2 + Math.sin(animT * 0.03 + q.gx) * 2, c1.x, midY);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // --- 3D FEATURES (blocking tiles as billboards) ---
+  // Re-sort close tiles front (for drawing on top)
+  const featureQuads = tileQuads.filter(q =>
+    (q.tile === T.TREE || q.tile === T.WALL || q.tile === T.ROCK) && q.dist < VIEW_RAD_3D * TILE_PX * 0.8
+  );
+  featureQuads.sort((a, b) => b.dist - a.dist); // back-to-front
+
+  for (const q of featureQuads) {
+    const [c0, c1, c2, c3] = q.corners;
+    const baseY = Math.min(c2.y, c3.y);
+    const midX = (c0.x + c1.x + c2.x + c3.x) / 4;
+    const tileScreenW = Math.abs(c1.x - c0.x);
+    const featureH = tileScreenW * 1.2;
+    const topY = baseY - featureH;
+
+    const maxDist = VIEW_RAD_3D * TILE_PX;
+    const distFactor = Math.max(0, 1 - (q.dist - CAM_BEHIND) / maxDist * 0.6);
+
+    ctx.save();
+    ctx.globalAlpha = distFactor;
+
+    if (q.tile === T.TREE) {
+      // Trunk
+      ctx.fillStyle = zt.tree_c[0];
+      const tw = tileScreenW * 0.15;
+      ctx.fillRect(midX - tw, baseY - featureH * 0.6, tw * 2, featureH * 0.6);
+      // Canopy
+      ctx.fillStyle = zt.tree_c[1];
+      const canR = tileScreenW * 0.4;
+      ctx.beginPath();
+      ctx.arc(midX, topY + canR * 0.5, canR, 0, Math.PI * 2);
+      ctx.fill();
+      // Canopy highlight
+      ctx.globalAlpha = distFactor * 0.3;
+      ctx.fillStyle = lighten(zt.tree_c[1], 0.25);
+      ctx.beginPath();
+      ctx.arc(midX - canR * 0.3, topY + canR * 0.2, canR * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (q.tile === T.ROCK) {
+      ctx.fillStyle = zt.block_c;
+      ctx.beginPath();
+      const rw = tileScreenW * 0.45;
+      const rh = featureH * 0.5;
+      ctx.ellipse(midX, baseY - rh * 0.5, rw, rh * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Highlight
+      ctx.globalAlpha = distFactor * 0.2;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(midX - rw * 0.3, baseY - rh * 0.7, rw * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (q.tile === T.WALL) {
+      ctx.fillStyle = zt.block_c;
+      const ww = tileScreenW;
+      ctx.fillRect(midX - ww / 2, topY, ww, featureH);
+      // Brick lines
+      ctx.globalAlpha = distFactor * 0.15;
+      ctx.strokeStyle = lighten(zt.block_c, 0.15);
+      ctx.lineWidth = 0.6;
+      for (let r = 0; r < 3; r++) {
+        const ry = topY + r * (featureH / 3);
+        ctx.strokeRect(midX - ww / 2 + 1, ry + 1, ww / 2 - 1, featureH / 3 - 1);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // --- FOOTSTEPS ---
+  ctx.save();
+  for (const fs of map.footsteps) {
+    const fp = projectToScreen(fs.x, fs.y);
+    if (!fp) continue;
+    if (fp.x < -20 || fp.x > W + 20 || fp.y < horizonY || fp.y > H + 20) continue;
+    ctx.globalAlpha = fs.t / 60 * 0.15;
+    ctx.fillStyle = 'rgba(180,160,130,0.5)';
+    const sz = Math.max(1, 3 * (200 / fp.dist));
+    ctx.beginPath();
+    ctx.arc(fp.x, fp.y, sz, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // --- PATH PREVIEW DOTS ---
+  if (map.path.length > 0 && map.moving) {
+    ctx.save();
+    for (let i = 0; i < map.path.length; i++) {
+      const p = map.path[i];
+      const pp = projectToScreen(p.x * TILE_PX + TILE_PX / 2, p.y * TILE_PX + TILE_PX / 2);
+      if (!pp) continue;
+      if (pp.x < -20 || pp.x > W + 20 || pp.y < horizonY) continue;
+      const pulse = Math.sin(animT * 0.1 + i * 0.5) * 0.5 + 0.5;
+      ctx.globalAlpha = 0.1 + pulse * 0.15;
+      ctx.fillStyle = '#88aaff';
+      const sz = Math.max(1.5, (2.5 + pulse) * (200 / pp.dist));
+      ctx.beginPath();
+      ctx.arc(pp.x, pp.y, sz, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // --- SPRITES (map objects) ---
+  const visibleObjs = [];
+  for (const obj of map.objects) {
+    if (obj.done && obj.type !== 'campfire') continue;
+    if (!map.seen[obj.gy * MAP_W + obj.gx]) continue;
+    const dx2 = obj.gx - map.gx, dy2 = obj.gy - map.gy;
+    if (dx2 * dx2 + dy2 * dy2 > VIEW_RAD_3D * VIEW_RAD_3D) continue;
+    const op = projectToScreen(obj.gx * TILE_PX + TILE_PX / 2, obj.gy * TILE_PX + TILE_PX / 2);
+    if (!op) continue;
+    if (op.x < -50 || op.x > W + 50 || op.y < horizonY) continue;
+    visibleObjs.push({ obj, proj: op });
+  }
+  visibleObjs.sort((a, b) => b.proj.dist - a.proj.dist); // back-to-front
+
+  for (const { obj, proj } of visibleObjs) {
+    const scale = Math.max(0.3, 200 / proj.dist);
+    ctx.save();
+    ctx.translate(proj.x, proj.y);
+    ctx.scale(scale, scale);
+    ctx.translate(-TILE_PX / 2, -TILE_PX / 2);
+    drawMapObject(obj, 0, 0);
+    ctx.restore();
+  }
+
+  // --- PLAYER CHARACTER (back view at fixed screen position) ---
+  drawPlayerBackView();
+
+  // --- TAP DESTINATION PING ---
+  if (map.tapPing > 0 && map.tgx >= 0) {
+    const tp = projectToScreen(map.tgx * TILE_PX + TILE_PX / 2, map.tgy * TILE_PX + TILE_PX / 2);
+    if (tp && tp.y > horizonY) {
+      ctx.save();
+      const r = (1 - map.tapPing) * 20 + 4;
+      const pingScale = Math.max(0.5, 200 / tp.dist);
+      ctx.globalAlpha = map.tapPing * 0.5;
+      ctx.strokeStyle = '#88aaff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(tp.x, tp.y, r * pingScale, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = map.tapPing * 0.6;
+      ctx.fillStyle = '#88aaff';
+      ctx.beginPath();
+      ctx.arc(tp.x, tp.y, 3 * pingScale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // --- AMBIENT PARTICLES (project from world to screen) ---
+  ctx.save();
+  for (const p of map.particles) {
+    p.x += p.vx + Math.sin(animT * 0.02 + p.phase) * 0.3;
+    p.y += p.vy;
+    if (p.y < 0) { p.y = MAP_H * TILE_PX; p.x = rng(0, MAP_W * TILE_PX); }
+    // Project world particle to screen
+    const pp = projectToScreen(p.x, p.y);
+    if (!pp) continue;
+    if (pp.x < -10 || pp.x > W + 10 || pp.y < horizonY || pp.y > H + 10) continue;
+    const pScale = Math.max(0.3, 150 / pp.dist);
+    ctx.globalAlpha = (p.alpha || 0.3) * (0.5 + Math.sin(animT * 0.03 + p.phase) * 0.5) * Math.min(1, pScale);
+    ctx.fillStyle = currentZone === 'cave' ? '#6666aa' : '#ffffff';
+    ctx.beginPath();
+    ctx.arc(pp.x, pp.y, p.size * pScale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // --- VIGNETTE ---
+  ctx.save();
+  const vig = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.6);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(11,14,23,0.5)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // --- MINIMAP ---
+  drawMinimap();
+}
+
+// ---- BACK-VIEW PLAYER ----
+function drawPlayerBackView() {
+  const moving = map.moving && map.path.length > 0;
+  const bob = moving ? Math.sin(animT * 0.2) * 2 : Math.sin(animT * 0.03) * 0.5;
+  const step = moving ? animT * 0.2 : 0;
+
+  // Fixed position: lower center of screen
+  const px = W / 2;
+  const py = H * 0.72;
+
+  ctx.save();
+  ctx.translate(px, py + bob);
+
+  // Shadow ellipse on ground
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, 12, 12, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Legs with walk cycle
+  const legSwing = moving ? Math.sin(step) * 6 : 0;
+  ctx.strokeStyle = '#2a2a3a';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  // Left leg
+  ctx.beginPath();
+  ctx.moveTo(-4, 6);
+  ctx.lineTo(-4 + legSwing, 16);
+  ctx.stroke();
+  // Right leg
+  ctx.beginPath();
+  ctx.moveTo(4, 6);
+  ctx.lineTo(4 - legSwing, 16);
+  ctx.stroke();
+  // Boots
+  ctx.fillStyle = '#2a1a0a';
+  ctx.beginPath();
+  ctx.arc(-4 + legSwing, 16, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(4 - legSwing, 16, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body/torso
+  ctx.fillStyle = '#3a3a5a';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 10, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Red cloak/cape (back view - prominent)
+  const capeFlutter = moving ? Math.sin(animT * 0.15) * 3 : Math.sin(animT * 0.04) * 0.5;
+  ctx.fillStyle = '#8b2020';
+  ctx.beginPath();
+  ctx.moveTo(-9, -4);
+  ctx.quadraticCurveTo(-10 + capeFlutter, 8, -6 + capeFlutter * 0.5, 14);
+  ctx.lineTo(6 - capeFlutter * 0.5, 14);
+  ctx.quadraticCurveTo(10 - capeFlutter, 8, 9, -4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cape highlight
+  ctx.save();
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = '#cc4444';
+  ctx.beginPath();
+  ctx.ellipse(0 + capeFlutter * 0.3, 4, 5, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Arms swinging opposite to legs
+  const armSwing = moving ? Math.sin(step + Math.PI) * 4 : 0;
+  ctx.strokeStyle = '#3a3a5a';
+  ctx.lineWidth = 3;
+  // Left arm
+  ctx.beginPath();
+  ctx.moveTo(-8, -1);
+  ctx.lineTo(-10, armSwing + 6);
+  ctx.stroke();
+  // Right arm
+  ctx.beginPath();
+  ctx.moveTo(8, -1);
+  ctx.lineTo(10, -armSwing + 6);
+  ctx.stroke();
+
+  // Head (back view)
+  ctx.fillStyle = '#d4b896';
+  ctx.beginPath();
+  ctx.arc(0, -11, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hair (back view - covers most of head)
+  ctx.fillStyle = '#4a2a1a';
+  ctx.beginPath();
+  ctx.arc(0, -12, 7.5, Math.PI * 0.7, Math.PI * 2.3);
+  ctx.fill();
+  // Hair back/ponytail
+  ctx.beginPath();
+  ctx.moveTo(-3, -5);
+  ctx.quadraticCurveTo(0, -3 + capeFlutter * 0.2, 3, -5);
+  ctx.lineTo(2, -8);
+  ctx.lineTo(-2, -8);
+  ctx.closePath();
+  ctx.fill();
+
+  // Idle glow ring
+  if (!moving) {
+    ctx.save();
+    ctx.globalAlpha = 0.06 + Math.sin(animT * 0.04) * 0.03;
+    ctx.strokeStyle = '#88aaff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 2, 16, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+// ---- ORIGINAL TOP-DOWN DRAW (kept for reference but no longer called) ----
 function drawTopDownMap() {
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle='#0b0e17'; ctx.fillRect(0,0,W,H);
@@ -1826,9 +2365,16 @@ function drawMinimap() {
     ctx.fillRect(mx+obj.gx*ts,my+obj.gy*ts,ts+1,ts+1);
   }
 
-  // Player dot
+  // Player dot with facing direction
+  const pdx = mx+map.gx*ts+ts/2, pdy = my+map.gy*ts+ts/2;
   ctx.fillStyle='#fff';
-  ctx.beginPath(); ctx.arc(mx+map.gx*ts+ts/2,my+map.gy*ts+ts/2,2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(pdx,pdy,2,0,Math.PI*2); ctx.fill();
+  // Direction line
+  ctx.strokeStyle='#88aaff'; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(pdx, pdy);
+  ctx.lineTo(pdx + Math.cos(map.angle)*6, pdy + Math.sin(map.angle)*6);
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -2206,9 +2752,9 @@ genParticles(currentZone);
 
 // ---- SCENE DRAWING ----
 function drawScene() {
-  // Top-down map takes over entire canvas during expedition
+  // Mode 7 3D map takes over entire canvas during expedition
   if (gameState === 'expedition' && map.tiles) {
-    drawTopDownMap();
+    drawMode7Map();
     return;
   }
   const b = BIOMES[currentZone];
