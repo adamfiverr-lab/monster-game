@@ -2720,6 +2720,25 @@ const battleAnim = {
   enemySlideIn: 0,           // 0-1, slide in from right on encounter
   playerSlideIn: 0,
   enemyDeath: 0,             // 0-1, shrink/fade on death
+  // Catch animation state
+  catchAnim: {
+    active: false,
+    phase: 'none',   // 'throw','impact','contain','wobble','result'
+    t: 0,            // frame counter
+    crystalX: 0, crystalY: 0,
+    targetX: 0, targetY: 0,
+    startX: 0, startY: 0,
+    ringAngle: 0,
+    wobbleCount: 0,
+    wobbleDir: 1,
+    success: false,
+    containScale: 0,
+    sparkles: [],    // success burst particles
+    shards: [],      // failure shatter particles
+    crystalAlpha: 1,
+    enemyScale: 1,   // shrink during contain
+    glowRadius: 0,
+  },
 };
 
 function resetBattleAnim() {
@@ -2731,6 +2750,11 @@ function resetBattleAnim() {
   battleAnim.impactEffects = [];
   battleAnim.enemySlideIn = 0; battleAnim.playerSlideIn = 0;
   battleAnim.enemyDeath = 0;
+  const ca = battleAnim.catchAnim;
+  ca.active = false; ca.phase = 'none'; ca.t = 0;
+  ca.wobbleCount = 0; ca.success = false; ca.containScale = 0;
+  ca.sparkles = []; ca.shards = []; ca.crystalAlpha = 1;
+  ca.enemyScale = 1; ca.glowRadius = 0; ca.ringAngle = 0;
 }
 
 function tweenTo(obj, prop, target, speed) {
@@ -2767,6 +2791,118 @@ function updateBattleAnims() {
     e.t++;
     return e.t < e.maxT;
   });
+
+  // update catch animation
+  const ca = battleAnim.catchAnim;
+  if (ca.active) {
+    ca.t++;
+    ca.ringAngle += 0.08;
+
+    if (ca.phase === 'throw') {
+      // Crystal flies in an arc from player to enemy
+      const dur = 28; // frames
+      const p = Math.min(1, ca.t / dur);
+      const ease = p < 0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2; // easeInOutQuad
+      ca.crystalX = ca.startX + (ca.targetX - ca.startX) * ease;
+      ca.crystalY = ca.startY + (ca.targetY - ca.startY) * ease - Math.sin(p * Math.PI) * 80;
+      if (ca.t >= dur) {
+        ca.phase = 'impact'; ca.t = 0;
+        battleAnim.enemyFlash = 1;
+        battleAnim.cameraZoom = 1.06;
+        battleAnim.enemyShake = 6;
+      }
+    } else if (ca.phase === 'impact') {
+      ca.glowRadius = Math.min(60, ca.t * 4);
+      if (ca.t >= 15) {
+        ca.phase = 'contain'; ca.t = 0;
+      }
+    } else if (ca.phase === 'contain') {
+      // Energy rings close in, enemy shrinks into crystal
+      ca.containScale = Math.min(1, ca.t / 30);
+      ca.enemyScale = Math.max(0.15, 1 - ca.containScale * 0.85);
+      ca.glowRadius = 60 - ca.containScale * 30;
+      if (ca.t >= 35) {
+        ca.phase = 'wobble'; ca.t = 0; ca.wobbleCount = 0; ca.wobbleDir = 1;
+      }
+    } else if (ca.phase === 'wobble') {
+      // 3 wobbles, each takes ~30 frames (wobble + pause)
+      const wobbleFrame = ca.t % 30;
+      if (wobbleFrame < 12) {
+        // Active wobble
+        const wP = wobbleFrame / 12;
+        const wobbleAngle = Math.sin(wP * Math.PI * 2) * 15 * ca.wobbleDir * (1 - wP * 0.3);
+        ca.crystalX = ca.targetX + wobbleAngle;
+        battleAnim.enemyShake = Math.abs(wobbleAngle) * 0.3;
+      } else if (wobbleFrame === 12) {
+        ca.crystalX = ca.targetX;
+        battleAnim.enemyShake = 0;
+        ca.wobbleDir *= -1;
+      }
+      // After pause, increment wobble count
+      if (wobbleFrame === 29) {
+        ca.wobbleCount++;
+        if (ca.wobbleCount >= 3) {
+          ca.phase = 'result'; ca.t = 0;
+        }
+      }
+    } else if (ca.phase === 'result') {
+      if (ca.success) {
+        // Success: sparkle burst, crystal fades with stars
+        if (ca.t === 1) {
+          battleAnim.cameraZoom = 1.03;
+          for (let i = 0; i < 20; i++) {
+            const ang = (i / 20) * Math.PI * 2 + Math.random() * 0.3;
+            const spd = 2 + Math.random() * 4;
+            ca.sparkles.push({
+              x: ca.targetX, y: ca.targetY,
+              vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 1,
+              size: 2 + Math.random() * 3,
+              life: 40 + Math.random() * 20,
+              t: 0,
+              color: ['#22c55e','#88ffaa','#ffffff','#ffdd44','#44ffcc'][i % 5],
+            });
+          }
+        }
+        ca.crystalAlpha = Math.max(0, 1 - ca.t / 25);
+        ca.enemyScale = Math.max(0, 0.15 - ca.t / 60);
+        ca.glowRadius = ca.t * 2;
+        // Update sparkles
+        for (const s of ca.sparkles) {
+          s.x += s.vx; s.y += s.vy; s.vy += 0.08; s.t++;
+        }
+        ca.sparkles = ca.sparkles.filter(s => s.t < s.life);
+        if (ca.t >= 50) { ca.active = false; }
+      } else {
+        // Failure: crystal shatters, enemy bursts back
+        if (ca.t === 1) {
+          battleAnim.cameraZoom = 1.05;
+          battleAnim.enemyShake = 12;
+          for (let i = 0; i < 14; i++) {
+            const ang = (i / 14) * Math.PI * 2 + Math.random() * 0.5;
+            const spd = 3 + Math.random() * 5;
+            ca.shards.push({
+              x: ca.targetX, y: ca.targetY,
+              vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 2,
+              size: 3 + Math.random() * 4,
+              rot: Math.random() * Math.PI * 2,
+              rotSpd: (Math.random() - 0.5) * 0.3,
+              life: 30 + Math.random() * 15,
+              t: 0,
+              color: ['#aa44ff','#ff4466','#ff8844','#cc66ff'][i % 4],
+            });
+          }
+        }
+        ca.enemyScale = Math.min(1, 0.15 + ca.t / 12);
+        ca.crystalAlpha = Math.max(0, 1 - ca.t / 8);
+        // Update shards
+        for (const s of ca.shards) {
+          s.x += s.vx; s.y += s.vy; s.vy += 0.15; s.rot += s.rotSpd; s.t++;
+        }
+        ca.shards = ca.shards.filter(s => s.t < s.life);
+        if (ca.t >= 40) { ca.active = false; }
+      }
+    }
+  }
 }
 
 function triggerAttackAnim(attacker, moveType) {
@@ -3029,6 +3165,162 @@ function genParticles(zone) {
 }
 genParticles(currentZone);
 
+// ---- CATCH ANIMATION RENDERING ----
+function drawCatchAnim() {
+  const ca = battleAnim.catchAnim;
+  if (!ca.active) return;
+
+  ctx.save();
+
+  // Crystal projectile
+  if (ca.crystalAlpha > 0.01 && (ca.phase === 'throw' || ca.phase === 'impact' || ca.phase === 'contain' || ca.phase === 'wobble' || ca.phase === 'result')) {
+    const cx = ca.crystalX, cy = ca.crystalY;
+    ctx.save();
+    ctx.globalAlpha = ca.crystalAlpha;
+
+    // Crystal glow
+    if (ca.phase !== 'throw') {
+      const glowR = ca.phase === 'wobble' ? 18 + Math.sin(ca.t * 0.3) * 5 : 15 + ca.glowRadius * 0.3;
+      ctx.save();
+      ctx.globalAlpha = ca.crystalAlpha * 0.3;
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+      glow.addColorStop(0, 'rgba(170,100,255,0.8)');
+      glow.addColorStop(0.5, 'rgba(130,60,220,0.3)');
+      glow.addColorStop(1, 'rgba(100,40,200,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // Crystal body — diamond shape
+    ctx.translate(cx, cy);
+    const cRot = ca.phase === 'throw' ? ca.t * 0.15 : ca.phase === 'wobble' ? (ca.crystalX - ca.targetX) * 0.03 : 0;
+    ctx.rotate(cRot);
+    const cSize = ca.phase === 'throw' ? 8 : 10;
+
+    // Outer diamond
+    ctx.fillStyle = '#aa66ff';
+    ctx.beginPath();
+    ctx.moveTo(0, -cSize * 1.4); ctx.lineTo(cSize, 0);
+    ctx.lineTo(0, cSize * 1.4); ctx.lineTo(-cSize, 0);
+    ctx.closePath(); ctx.fill();
+
+    // Inner facet highlight
+    ctx.fillStyle = '#cc99ff';
+    ctx.globalAlpha = ca.crystalAlpha * 0.7;
+    ctx.beginPath();
+    ctx.moveTo(0, -cSize * 0.9); ctx.lineTo(cSize * 0.5, 0);
+    ctx.lineTo(0, cSize * 0.5); ctx.lineTo(-cSize * 0.5, -cSize * 0.2);
+    ctx.closePath(); ctx.fill();
+
+    // Bright point
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = ca.crystalAlpha * 0.8;
+    ctx.beginPath(); ctx.arc(-cSize * 0.2, -cSize * 0.4, 2, 0, Math.PI * 2); ctx.fill();
+
+    ctx.restore();
+  }
+
+  // Energy containment rings
+  if ((ca.phase === 'contain' || ca.phase === 'wobble') && ca.containScale > 0) {
+    const tx = ca.targetX, ty = ca.targetY;
+    ctx.save();
+    ctx.globalAlpha = 0.5 + Math.sin(ca.t * 0.2) * 0.2;
+
+    // Ring 1 — horizontal orbit
+    const r1 = 40 * (1 - ca.containScale * 0.5);
+    ctx.strokeStyle = '#aa66ff'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(tx, ty, r1, r1 * 0.3, ca.ringAngle, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Ring 2 — vertical orbit
+    ctx.strokeStyle = '#6644cc'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(tx, ty, r1 * 0.3, r1, ca.ringAngle + Math.PI / 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Ring 3 — diagonal
+    ctx.strokeStyle = '#cc88ff'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(tx, ty, r1 * 0.7, r1 * 0.5, -ca.ringAngle * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Energy particles orbiting
+    for (let i = 0; i < 6; i++) {
+      const a = ca.ringAngle * 2 + i * Math.PI / 3;
+      const orbitR = r1 * 0.8;
+      const px = tx + Math.cos(a) * orbitR;
+      const py = ty + Math.sin(a) * orbitR * 0.4;
+      ctx.fillStyle = i % 2 === 0 ? '#cc88ff' : '#8855ee';
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Glow during impact
+  if (ca.phase === 'impact' && ca.glowRadius > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.4 * (1 - ca.t / 15);
+    const ig = ctx.createRadialGradient(ca.targetX, ca.targetY, 0, ca.targetX, ca.targetY, ca.glowRadius);
+    ig.addColorStop(0, '#ffffff');
+    ig.addColorStop(0.3, '#cc88ff');
+    ig.addColorStop(1, 'rgba(170,100,255,0)');
+    ctx.fillStyle = ig;
+    ctx.beginPath(); ctx.arc(ca.targetX, ca.targetY, ca.glowRadius, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Success sparkles
+  for (const s of ca.sparkles) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - s.t / s.life);
+    ctx.fillStyle = s.color;
+    // Star shape
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.t * 0.1);
+    const sz = s.size * (1 - s.t / s.life * 0.5);
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      const r = i % 2 === 0 ? sz : sz * 0.4;
+      if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    for (let i = 5; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+      const r = i % 2 === 0 ? sz : sz * 0.4;
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // Failure shards
+  for (const s of ca.shards) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - s.t / s.life);
+    ctx.fillStyle = s.color;
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.rot);
+    // Jagged shard shape
+    const sz = s.size * (1 - s.t / s.life * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(0, -sz); ctx.lineTo(sz * 0.4, -sz * 0.2);
+    ctx.lineTo(sz * 0.3, sz * 0.5); ctx.lineTo(-sz * 0.3, sz * 0.3);
+    ctx.lineTo(-sz * 0.5, -sz * 0.1);
+    ctx.closePath(); ctx.fill();
+    // Glow on shard
+    ctx.globalAlpha *= 0.3;
+    ctx.shadowColor = s.color; ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 // ---- SCENE DRAWING ----
 function drawScene() {
   // Mode 7 3D map takes over entire canvas during expedition
@@ -3140,6 +3432,8 @@ function drawScene() {
       const eShakeX = battleAnim.enemyShake ? (Math.random()-0.5) * battleAnim.enemyShake : 0;
       const eShakeY = battleAnim.enemyShake ? (Math.random()-0.5) * battleAnim.enemyShake * 0.5 : 0;
       const eDeath = battleAnim.enemyDeath;
+      const ca = battleAnim.catchAnim;
+      const cScale = ca.active ? ca.enemyScale : 1;
 
       ctx.save();
       if(eDeath > 0) {
@@ -3147,6 +3441,17 @@ function drawScene() {
         ctx.translate(eBaseX + battleAnim.enemyX + eOffX + eShakeX, eBaseY + battleAnim.enemyY + eShakeY + eDeath * 20);
         ctx.scale(1 - eDeath * 0.5, 1 - eDeath * 0.5);
         ctx.translate(-(eBaseX + battleAnim.enemyX + eOffX + eShakeX), -(eBaseY + battleAnim.enemyY + eShakeY + eDeath * 20));
+      } else if (cScale < 1) {
+        // Catch containment shrink — scale toward crystal position
+        const cx2 = ca.targetX || eBaseX;
+        const cy2 = ca.targetY || eBaseY;
+        ctx.translate(cx2, cy2);
+        ctx.scale(cScale, cScale);
+        ctx.translate(-cx2, -cy2);
+        // Purple tint during containment
+        if (ca.phase === 'contain' || ca.phase === 'wobble') {
+          ctx.globalAlpha = 0.6 + cScale * 0.4;
+        }
       }
 
       drawCreatureOnScene(enemyMonster,
@@ -3197,6 +3502,9 @@ function drawScene() {
 
     // Draw impact effects on top of creatures
     drawImpactEffects();
+
+    // Draw catch animation overlays
+    drawCatchAnim();
 
     // restore camera zoom
     if(gameState==='battle' && battleAnim.cameraZoom !== 1) {
@@ -4062,63 +4370,102 @@ function attemptCatch() {
   const baseChance = 0.15;
   const hpBonus = (1 - hpPct) * 0.75;
   const catchChance = Math.min(0.95, baseChance + hpBonus);
+  const success = Math.random() < catchChance;
 
   log.textContent = 'Throwing capture crystal...';
   log.className = '';
 
-  // Animate: shake the enemy
-  const sceneWrap = document.getElementById('sceneWrap');
+  // Compute enemy screen position for crystal target
+  const groundY = H * 0.72;
+  const eBaseX = W * 0.65;
+  const eBaseY = groundY - 10;
+  const pBaseX = W * 0.2;
+  const pBaseY = groundY + 5;
+
+  // Initialize catch animation
+  const ca = battleAnim.catchAnim;
+  ca.active = true;
+  ca.phase = 'throw';
+  ca.t = 0;
+  ca.startX = pBaseX + 15;
+  ca.startY = pBaseY - 20;
+  ca.targetX = eBaseX;
+  ca.targetY = eBaseY - 10;
+  ca.crystalX = ca.startX;
+  ca.crystalY = ca.startY;
+  ca.crystalAlpha = 1;
+  ca.enemyScale = 1;
+  ca.containScale = 0;
+  ca.glowRadius = 0;
+  ca.wobbleCount = 0;
+  ca.wobbleDir = 1;
+  ca.ringAngle = 0;
+  ca.success = success;
+  ca.sparkles = [];
+  ca.shards = [];
+
+  // Phase timeline callbacks
+  // throw: ~28 frames (~470ms)
+  // impact: ~15 frames (~250ms)
+  // contain: ~35 frames (~580ms)
+  // wobble: ~90 frames (~1500ms) — 3 wobbles x 30 frames
+  // result: ~50 frames (~830ms)
+  // Total: ~3.6 seconds
+
+  const throwMs = 500;
+  const impactMs = 280;
+  const containMs = 620;
+  const wobbleMs = 1550;
+
+  // Update log text at key moments
+  setTimeout(() => {
+    log.textContent = 'Crystal activated!';
+  }, throwMs);
 
   setTimeout(() => {
-    // Shake animation on canvas
-    sceneWrap.style.animation = 'catchShake 0.8s ease';
-    setTimeout(() => { sceneWrap.style.animation = ''; }, 800);
+    log.textContent = 'Containing...';
+  }, throwMs + impactMs);
 
+  // Wobble tension text
+  for (let w = 0; w < 3; w++) {
     setTimeout(() => {
-      const success = Math.random() < catchChance;
+      log.textContent = ['Wobble...', 'Wobble...!', '...!!'][w];
+    }, throwMs + impactMs + containMs + w * 510);
+  }
 
-      if (success) {
-        log.textContent = `${catchTarget.name} was caught!`;
-        log.className = 'heal';
+  // Result
+  setTimeout(() => {
+    if (success) {
+      log.textContent = `${catchTarget.name} was caught!`;
+      log.className = 'heal';
 
-        // Disable catch button
-        const catchBtn = document.getElementById('catchBtn');
-        catchBtn.classList.add('disabled');
-        catchBtn.textContent = 'Caught!';
+      const catchBtn = document.getElementById('catchBtn');
+      catchBtn.classList.add('disabled');
+      catchBtn.textContent = 'Caught!';
 
-        // Shrink enemy animation
-        const shrinkAnim = setInterval(() => {
-          battleAnim.enemyDeath += 0.05;
-          if(battleAnim.enemyDeath >= 1) {
-            clearInterval(shrinkAnim);
-            battleAnim.enemyDeath = 1;
-          }
-        }, 30);
+      setTimeout(() => endBattle('caught'), 900);
+    } else {
+      log.textContent = `${catchTarget.name} broke free!`;
+      log.className = 'hit';
 
-        setTimeout(() => endBattle('caught'), 800);
-      } else {
-        log.textContent = `${catchTarget.name} broke free!`;
-        log.className = 'hit';
+      // Enemy retaliates after breaking free
+      setTimeout(() => {
+        const eMove = pick(enemyMonster.moves);
+        const eDmg = Math.max(1, Math.floor(eMove.damage * (enemyMonster.stats.atk/50) * (1 - playerMonster.stats.def/200) * (0.85+Math.random()*0.3)));
+        triggerAttackAnim('enemy', eMove.type);
+        playerMonster.currentHP -= eDmg;
+        updateBattleUI();
+        showDmgFloat(eDmg, W*0.2, H*0.45);
+        log.textContent = `${enemyMonster.name} used ${eMove.name}! -${eDmg} HP`;
 
-        // Enemy retaliates
-        setTimeout(() => {
-          const eMove = pick(enemyMonster.moves);
-          const eDmg = Math.max(1, Math.floor(eMove.damage * (enemyMonster.stats.atk/50) * (1 - playerMonster.stats.def/200) * (0.85+Math.random()*0.3)));
-          triggerAttackAnim('enemy', eMove.type);
-          playerMonster.currentHP -= eDmg;
-          updateBattleUI();
-          showDmgFloat(eDmg, W*0.2, H*0.45);
-          log.textContent = `${enemyMonster.name} used ${eMove.name}! -${eDmg} HP`;
-
-          if(playerMonster.currentHP <= 0) {
-            setTimeout(() => endBattle('defeat'), 600);
-            return;
-          }
-          battleBusy = false;
-        }, 500);
-      }
-    }, 900);
-  }, 300);
+        if(playerMonster.currentHP <= 0) {
+          setTimeout(() => endBattle('defeat'), 600);
+          return;
+        }
+        battleBusy = false;
+      }, 700);
+    }
+  }, throwMs + impactMs + containMs + wobbleMs + 100);
 }
 
 // ---- MONSTER COLLECTION ----
