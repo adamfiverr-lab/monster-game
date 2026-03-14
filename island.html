@@ -420,50 +420,60 @@
     grid-column: 1 / -1;
   }
 
-  /* Fusion bar */
-  #fusionBar {
-    display:flex; align-items:center; justify-content:center;
-    gap:8px; padding:10px 0 14px; flex:0 0 auto;
-    width:100%; max-width:360px;
+  /* My Monster panel at top of collection */
+  #myMonsterPanel {
+    flex:0 0 auto; width:100%; max-width:360px;
+    background:var(--card); border:1px solid var(--border);
+    border-radius:14px; padding:12px; text-align:center;
+    position:relative; overflow:hidden;
   }
-  .fuse-slot {
-    width:60px; height:60px; border-radius:10px;
-    background:var(--abyss); border:2px dashed var(--border);
-    display:flex; align-items:center; justify-content:center;
-    cursor:pointer; position:relative; overflow:hidden;
-  }
-  .fuse-slot span {
-    font-size:9px; color:var(--muted); text-transform:uppercase;
-    letter-spacing:0.5px; font-family:'Cinzel',serif;
-  }
-  .fuse-slot.filled {
-    border-style:solid; border-color:var(--gold);
-    box-shadow:0 0 8px rgba(245,158,11,0.2);
-  }
-  .fuse-slot.filled span { display:none; }
-  .fuse-slot canvas { width:100%; height:100%; }
-  #fusePlus, #fuseEquals {
-    font-family:'Cinzel',serif; font-weight:900; font-size:20px;
-    color:var(--gold); flex:0 0 auto;
-  }
-  #fuseBtn {
-    padding:10px 18px; border:none; border-radius:10px;
-    font-family:'Cinzel',serif; font-weight:700; font-size:12px;
-    letter-spacing:1px; text-transform:uppercase;
-    background:linear-gradient(135deg, #92690a 0%, #b8860b 100%);
-    color:#fff; cursor:pointer;
-    box-shadow:0 2px 10px rgba(245,158,11,0.3);
-    transition: transform 0.1s;
-  }
-  #fuseBtn:active { transform:scale(0.97); }
-  #fuseBtn.disabled {
-    background:var(--card); color:var(--muted);
-    border:1px solid var(--border); box-shadow:none;
+  #myMonsterPanel::before {
+    content:''; position:absolute; inset:0;
+    background:radial-gradient(ellipse at center 40%, rgba(245,158,11,0.06) 0%, transparent 70%);
     pointer-events:none;
   }
-  .coll-card.selected {
+  #myMonsterLabel {
+    font-family:'Cinzel',serif; font-weight:700; font-size:10px;
+    color:var(--gold); letter-spacing:2px; text-transform:uppercase;
+    margin-bottom:4px;
+  }
+  #myMonsterCanvas {
+    width:160px; height:130px; display:block; margin:0 auto;
+    border-radius:8px;
+  }
+  #myMonsterName {
+    font-family:'Cinzel',serif; font-weight:900; font-size:16px;
+    color:var(--bright); margin-top:6px; letter-spacing:1px;
+  }
+  #myMonsterStats {
+    font-size:11px; color:var(--gold-dim); letter-spacing:0.5px;
+    margin-top:2px;
+  }
+  #myMonsterDetails {
+    font-size:10px; color:var(--muted); margin-top:4px;
+    letter-spacing:0.3px;
+  }
+  #absorbLabel {
+    flex:0 0 auto; font-family:'Cinzel',serif; font-weight:700;
+    font-size:11px; color:var(--muted); letter-spacing:1px;
+    text-transform:uppercase; padding:10px 0 4px;
+  }
+  .coll-card.absorb-ready {
+    cursor:pointer; border-color:var(--gold-dim);
+  }
+  .coll-card.absorb-ready:active {
+    transform:scale(0.96);
     border-color:var(--gold);
     box-shadow:0 0 12px rgba(245,158,11,0.3);
+  }
+  /* Absorb animation */
+  @keyframes absorbPulse {
+    0% { box-shadow:0 0 0 rgba(245,158,11,0); }
+    50% { box-shadow:0 0 30px rgba(245,158,11,0.5); }
+    100% { box-shadow:0 0 0 rgba(245,158,11,0); }
+  }
+  #myMonsterPanel.absorbing {
+    animation: absorbPulse 0.6s ease;
   }
 
   /* Catch shake animation */
@@ -541,7 +551,7 @@
       Set Out
     </button>
     <div id="exploreStatus"></div>
-    <button id="collectionBtn" onclick="showCollection()">Monsters &amp; Fuse <span id="collCount">0</span></button>
+    <button id="collectionBtn" onclick="showCollection()">Absorb <span id="collCount">0</span></button>
   </div>
 
   <div id="expeditionUI">
@@ -584,14 +594,14 @@
 </div>
 
 <div id="collectionOverlay">
-  <h2>Monsters &amp; Fusion</h2>
-  <div id="fusionBar">
-    <div id="fuseSlotA" class="fuse-slot" onclick="clearFuseSlot(0)"><span>Select</span></div>
-    <div id="fusePlus">+</div>
-    <div id="fuseSlotB" class="fuse-slot" onclick="clearFuseSlot(1)"><span>Select</span></div>
-    <div id="fuseEquals">=</div>
-    <button id="fuseBtn" class="disabled" onclick="fuseMonsters()">Fuse</button>
+  <div id="myMonsterPanel">
+    <div id="myMonsterLabel">Your Monster</div>
+    <canvas id="myMonsterCanvas"></canvas>
+    <div id="myMonsterName">Sproutling</div>
+    <div id="myMonsterStats">Lv3 · 0 fusions</div>
+    <div id="myMonsterDetails"></div>
   </div>
+  <div id="absorbLabel">Tap a monster to absorb it</div>
   <div id="collGrid"></div>
   <button onclick="hideCollection()">Close</button>
 </div>
@@ -1751,25 +1761,50 @@ function drawMinimap() {
   ctx.restore();
 }
 
-const playerMonster = {
-  name: 'Kaelfang',
+const DEFAULT_PLAYER_MONSTER = {
+  name: 'Sproutling',
   type: 'earth',
-  level: 8,
+  level: 3,
   archetype: 'beast',
-  stats: { hp: 95, atk: 42, def: 38, spd: 55 },
-  currentHP: 95,
+  fusions: 0, // tracks total absorptions
+  stats: { hp: 45, atk: 18, def: 15, spd: 20 },
+  currentHP: 45,
   moves: [
-    { name:'Stone Fang', damage:28, type:'earth' },
-    { name:'Tremor Slam', damage:35, type:'earth' },
-    { name:'Root Crush', damage:22, type:'earth' },
-    { name:'Earthshatter', damage:45, type:'earth' }
+    { name:'Nibble', damage:12, type:'earth' },
+    { name:'Tackle', damage:15, type:'earth' },
+    { name:'Growl', damage:8, type:'earth' },
+    { name:'Scratch', damage:10, type:'earth' }
   ],
   colors: { pri:'#557722', sec:'#88cc44', hi:'#ccaa55', dark:'#334411', skin:'#669933' },
-  head:{shape:'wolf',size:1}, neck:{length:0.4,thick:0.35}, body:{size:0.85,bulk:1.1},
-  legs:{count:4,style:'plantigrade',clawSize:0.7}, wings:{style:'none',span:1,membrane:false},
-  tail:{style:'whip',length:1.1,thick:0.25}, horns:{style:'none',size:0.5},
-  armor:'fur', spines:false, fangs:true, eyeGlow:true, breathEffect:false, scarred:false
+  head:{shape:'wolf',size:0.7}, neck:{length:0.3,thick:0.25}, body:{size:0.55,bulk:0.7},
+  legs:{count:4,style:'plantigrade',clawSize:0.4}, wings:{style:'none',span:0.6,membrane:false},
+  tail:{style:'whip',length:0.6,thick:0.15}, horns:{style:'none',size:0.3},
+  armor:'fur', spines:false, fangs:false, eyeGlow:false, breathEffect:false, scarred:false
 };
+let playerMonster = JSON.parse(JSON.stringify(DEFAULT_PLAYER_MONSTER));
+
+// Load saved player monster
+function savePlayerMonster() {
+  try { localStorage.setItem('verdantia_player', JSON.stringify(playerMonster)); } catch(e) {}
+}
+function loadPlayerMonster() {
+  try {
+    const data = localStorage.getItem('verdantia_player');
+    if (data) {
+      const saved = JSON.parse(data);
+      // Merge with defaults for any missing fields
+      playerMonster = { ...DEFAULT_PLAYER_MONSTER, ...saved };
+      playerMonster.currentHP = playerMonster.stats.hp;
+    }
+  } catch(e) {}
+}
+loadPlayerMonster();
+
+// Player battle scale increases with fusions
+function getPlayerBattleScale() {
+  // Starts at 0.3, grows with each fusion, caps around 0.75
+  return Math.min(0.75, 0.3 + playerMonster.fusions * 0.04);
+}
 
 let enemyMonster = null;
 let battleTurn = 'player';
@@ -2248,7 +2283,7 @@ function drawScene() {
       drawCreatureOnScene(playerMonster,
         pBaseX + battleAnim.playerX + pOffX + pShakeX,
         pBaseY + battleAnim.playerY + pShakeY,
-        0.4, true);
+        getPlayerBattleScale(), true);
 
       // white flash overlay on hit
       if(battleAnim.playerFlash > 0.05) {
@@ -3203,14 +3238,34 @@ function loadCaughtMonsters() {
   } catch(e) {}
 }
 
-let fuseSelection = [null, null]; // indices into caughtMonsters
-
 function showCollection() {
-  fuseSelection = [null, null];
   const overlay = document.getElementById('collectionOverlay');
+  drawMyMonster();
+  updateMyMonsterInfo();
   rebuildCollectionGrid();
-  updateFuseSlots();
   overlay.classList.add('active');
+}
+
+function drawMyMonster() {
+  const cvs = document.getElementById('myMonsterCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const w = 160, h = 130;
+  cvs.width = w * dpr; cvs.height = h * dpr;
+  cvs.style.width = w + 'px'; cvs.style.height = h + 'px';
+  const c = cvs.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Scale creature to fit — bigger monsters drawn bigger
+  const baseScale = 0.003 + playerMonster.fusions * 0.0004;
+  const scale = Math.min(0.008, baseScale);
+  drawCreatureOnCanvas(c, playerMonster, w/2, h*0.58, scale * w, false);
+}
+
+function updateMyMonsterInfo() {
+  document.getElementById('myMonsterName').textContent = playerMonster.name;
+  document.getElementById('myMonsterStats').textContent =
+    `Lv${playerMonster.level} · ${playerMonster.fusions} fusion${playerMonster.fusions!==1?'s':''}`;
+  document.getElementById('myMonsterDetails').textContent =
+    `HP ${playerMonster.stats.hp} · ATK ${playerMonster.stats.atk} · DEF ${playerMonster.stats.def} · SPD ${playerMonster.stats.spd}`;
 }
 
 function rebuildCollectionGrid() {
@@ -3218,14 +3273,16 @@ function rebuildCollectionGrid() {
   grid.innerHTML = '';
 
   if (caughtMonsters.length === 0) {
-    grid.innerHTML = '<div id="collEmpty">No monsters caught yet.<br>Explore and catch them!</div>';
+    grid.innerHTML = '<div id="collEmpty">No monsters caught yet.<br>Catch them and absorb to grow stronger!</div>';
+    document.getElementById('absorbLabel').textContent = 'No monsters to absorb';
     return;
   }
 
+  document.getElementById('absorbLabel').textContent = 'Tap a monster to absorb it';
+
   caughtMonsters.forEach((mon, idx) => {
     const card = document.createElement('div');
-    card.className = 'coll-card';
-    if (fuseSelection[0]===idx || fuseSelection[1]===idx) card.classList.add('selected');
+    card.className = 'coll-card absorb-ready';
 
     const cvs = document.createElement('canvas');
     const size = 130;
@@ -3244,9 +3301,9 @@ function rebuildCollectionGrid() {
 
     const infoDiv = document.createElement('div');
     infoDiv.className = 'coll-info';
-    infoDiv.textContent = `Lv${mon.level} · ${mon.type} · HP${mon.stats.hp} ATK${mon.stats.atk}`;
+    infoDiv.textContent = `Lv${mon.level} · ${mon.type} · HP+${Math.floor(mon.stats.hp*0.3)} ATK+${Math.floor(mon.stats.atk*0.3)}`;
 
-    card.addEventListener('click', () => selectForFusion(idx));
+    card.addEventListener('click', () => absorbMonster(idx));
     card.appendChild(cvs);
     card.appendChild(nameDiv);
     card.appendChild(infoDiv);
@@ -3254,144 +3311,138 @@ function rebuildCollectionGrid() {
   });
 }
 
-function selectForFusion(idx) {
-  // If already selected, deselect
-  if (fuseSelection[0]===idx) { fuseSelection[0]=null; }
-  else if (fuseSelection[1]===idx) { fuseSelection[1]=null; }
-  // Otherwise fill first empty slot
-  else if (fuseSelection[0]===null) { fuseSelection[0]=idx; }
-  else if (fuseSelection[1]===null) { fuseSelection[1]=idx; }
-  else { fuseSelection[0]=idx; } // replace first slot
+function absorbMonster(idx) {
+  if (idx < 0 || idx >= caughtMonsters.length) return;
+  const prey = caughtMonsters[idx];
+  const p = playerMonster;
 
-  rebuildCollectionGrid();
-  updateFuseSlots();
-}
+  // ---- STAT GROWTH ----
+  p.fusions++;
+  p.level = Math.max(p.level, prey.level) + 1;
 
-function clearFuseSlot(slotIdx) {
-  fuseSelection[slotIdx] = null;
-  rebuildCollectionGrid();
-  updateFuseSlots();
-}
+  // Stats: add ~30% of the absorbed monster's stats
+  const boost = 0.3;
+  p.stats.hp += Math.floor(prey.stats.hp * boost);
+  p.stats.atk += Math.floor(prey.stats.atk * boost);
+  p.stats.def += Math.floor(prey.stats.def * boost);
+  p.stats.spd += Math.floor(prey.stats.spd * boost);
+  p.currentHP = p.stats.hp;
 
-function updateFuseSlots() {
-  const slotA = document.getElementById('fuseSlotA');
-  const slotB = document.getElementById('fuseSlotB');
-  const fuseBtn = document.getElementById('fuseBtn');
+  // ---- MOVES: replace weakest move if prey has a stronger one ----
+  const preyBest = prey.moves.reduce((a,b) => a.damage > b.damage ? a : b);
+  const myWorst = p.moves.reduce((a,b) => a.damage < b.damage ? a : b);
+  if (preyBest.damage > myWorst.damage) {
+    const worstIdx = p.moves.indexOf(myWorst);
+    p.moves[worstIdx] = { name: preyBest.name, damage: Math.floor(preyBest.damage * 1.1), type: preyBest.type };
+  }
+  // Boost all move damage slightly with each fusion
+  p.moves.forEach(m => m.damage = Math.floor(m.damage * 1.05));
 
-  [slotA, slotB].forEach((slot, i) => {
-    slot.innerHTML = '';
-    if (fuseSelection[i] !== null && caughtMonsters[fuseSelection[i]]) {
-      const mon = caughtMonsters[fuseSelection[i]];
-      slot.classList.add('filled');
-      const cvs = document.createElement('canvas');
-      const size = 56;
-      const dpr = window.devicePixelRatio || 1;
-      cvs.width = size * dpr; cvs.height = size * dpr;
-      cvs.style.width = size + 'px'; cvs.style.height = size + 'px';
-      const c = cvs.getContext('2d');
-      c.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawCreatureOnCanvas(c, mon, size/2, size*0.55, size*0.003, false);
-      slot.appendChild(cvs);
-    } else {
-      slot.classList.remove('filled');
-      slot.innerHTML = '<span>Select</span>';
-    }
-  });
+  // ---- VISUAL GROWTH ----
+  // Body grows bigger
+  p.body.size = Math.min(2.2, (p.body.size||0.55) + 0.08);
+  p.body.bulk = Math.min(2.0, (p.body.bulk||0.7) + 0.06);
 
-  // Enable fuse button only when both slots filled
-  if (fuseSelection[0] !== null && fuseSelection[1] !== null) {
-    fuseBtn.classList.remove('disabled');
+  // Head grows
+  p.head.size = Math.min(1.6, (p.head.size||0.7) + 0.04);
+
+  // Neck thickens
+  p.neck.length = Math.min(1.0, (p.neck.length||0.3) + 0.03);
+  p.neck.thick = Math.min(0.6, (p.neck.thick||0.25) + 0.02);
+
+  // Legs bulk up
+  p.legs.clawSize = Math.min(1.2, (p.legs.clawSize||0.4) + 0.04);
+
+  // Tail grows
+  p.tail.length = Math.min(2.0, (p.tail.length||0.6) + 0.06);
+  p.tail.thick = Math.min(0.5, (p.tail.thick||0.15) + 0.02);
+
+  // ---- INHERIT VISUAL TRAITS from prey ----
+  // Gain wings if prey has them and we don't
+  if (prey.wings && prey.wings.style !== 'none' && p.wings.style === 'none') {
+    p.wings = { ...prey.wings };
+  } else if (p.wings.style !== 'none') {
+    p.wings.span = Math.min(2.0, p.wings.span + 0.05);
+  }
+
+  // Gain horns if prey has them and we don't
+  if (prey.horns && prey.horns.style !== 'none' && p.horns.style === 'none') {
+    p.horns = { ...prey.horns };
+  } else if (p.horns.style !== 'none') {
+    p.horns.size = Math.min(1.5, p.horns.size + 0.05);
+  }
+
+  // Gain spines/fangs/eyeGlow from prey
+  if (prey.spines) p.spines = true;
+  if (prey.fangs) p.fangs = true;
+  if (prey.eyeGlow) p.eyeGlow = true;
+
+  // Tail style can change to prey's if it's cooler
+  const coolTails = ['flame','bladed','spiked','barbed'];
+  if (coolTails.indexOf(prey.tail.style) > coolTails.indexOf(p.tail.style)) {
+    p.tail.style = prey.tail.style;
+  }
+
+  // Armor can upgrade
+  const armorTier = ['smooth','fur','scales','plates','rocky'];
+  if (armorTier.indexOf(prey.armor) > armorTier.indexOf(p.armor)) {
+    p.armor = prey.armor;
+  }
+
+  // Legs count can increase
+  if ((prey.legs?.count||0) > (p.legs?.count||0)) {
+    p.legs.count = prey.legs.count;
+  }
+
+  // Type can shift if absorbed monster is different
+  if (prey.type !== p.type && p.fusions % 3 === 0) {
+    p.type = prey.type;
+    p.colors = { ...prey.colors };
+    // Recolor moves to new type
+    p.moves.forEach(m => m.type = p.type);
+  }
+
+  // ---- NAME EVOLUTION ----
+  // Every few fusions, the name evolves
+  if (p.fusions <= 1) {
+    // Keep original name
+  } else if (p.fusions <= 3) {
+    // Add prey syllable
+    const mid = Math.floor(prey.name.length / 2);
+    p.name = p.name.slice(0, Math.ceil(p.name.length*0.6)) + prey.name.slice(mid);
   } else {
-    fuseBtn.classList.add('disabled');
-  }
-}
-
-function fuseMonsters() {
-  if (fuseSelection[0]===null || fuseSelection[1]===null) return;
-  if (fuseSelection[0]===fuseSelection[1]) return;
-
-  const a = caughtMonsters[fuseSelection[0]];
-  const b = caughtMonsters[fuseSelection[1]];
-
-  // Create fused monster — inherits traits from both parents
-  const fused = JSON.parse(JSON.stringify(a)); // start with parent A's structure
-
-  // Name: combine syllables from both parents
-  const nameA = a.name, nameB = b.name;
-  const midA = Math.ceil(nameA.length/2), midB = Math.floor(nameB.length/2);
-  fused.name = nameA.slice(0,midA) + nameB.slice(midB);
-
-  // Level: max of both + 1
-  fused.level = Math.max(a.level, b.level) + 1;
-
-  // Type: randomly from either parent
-  fused.type = Math.random() < 0.5 ? a.type : b.type;
-  fused.colors = fused.type === a.type ? {...a.colors} : {...b.colors};
-
-  // Stats: average + 15% bonus
-  fused.stats = {
-    hp: Math.floor((a.stats.hp + b.stats.hp) / 2 * 1.15),
-    atk: Math.floor((a.stats.atk + b.stats.atk) / 2 * 1.15),
-    def: Math.floor((a.stats.def + b.stats.def) / 2 * 1.15),
-    spd: Math.floor((a.stats.spd + b.stats.spd) / 2 * 1.15),
-  };
-  fused.currentHP = fused.stats.hp;
-
-  // Moves: pick best 4 from combined pool (highest damage)
-  const allMoves = [...a.moves, ...b.moves].sort((x,y) => y.damage - x.damage);
-  const seen = new Set();
-  fused.moves = [];
-  for (const m of allMoves) {
-    if (!seen.has(m.name) && fused.moves.length < 4) {
-      fused.moves.push({...m, type: fused.type, damage: Math.floor(m.damage * 1.1)});
-      seen.add(m.name);
-    }
+    // More dramatic name changes at higher fusion counts
+    const pre = p.name.slice(0, Math.min(4, Math.ceil(p.name.length/2)));
+    const suf = prey.name.slice(Math.floor(prey.name.length/2));
+    p.name = pre + suf;
   }
 
-  // Body: mix parts from both parents
-  fused.body = {
-    size: (a.body.size + b.body.size) / 2 * 1.05,
-    bulk: (a.body.bulk + b.body.bulk) / 2 * 1.05,
-  };
-  fused.head = Math.random()<0.5 ? {...a.head} : {...b.head};
-  fused.neck = Math.random()<0.5 ? {...a.neck} : {...b.neck};
-  fused.legs = Math.random()<0.5 ? {...a.legs} : {...b.legs};
-  fused.wings = a.wings.style!=='none' ? {...a.wings} : {...b.wings};
-  fused.tail = Math.random()<0.5 ? {...a.tail} : {...b.tail};
-  fused.horns = a.horns.style!=='none' ? {...a.horns} : {...b.horns};
-  fused.armor = Math.random()<0.5 ? a.armor : b.armor;
-  fused.spines = a.spines || b.spines;
-  fused.fangs = a.fangs || b.fangs;
-  fused.eyeGlow = a.eyeGlow || b.eyeGlow;
-
-  // Remove parents (higher index first to avoid shifting issues)
-  const indices = [fuseSelection[0], fuseSelection[1]].sort((a,b) => b-a);
-  caughtMonsters.splice(indices[0], 1);
-  caughtMonsters.splice(indices[1], 1);
-
-  // Add fused monster
-  caughtMonsters.push(fused);
+  // ---- REMOVE ABSORBED MONSTER ----
+  caughtMonsters.splice(idx, 1);
   saveCaughtMonsters();
+  savePlayerMonster();
   document.getElementById('collCount').textContent = caughtMonsters.length;
 
-  // Show result
-  fuseSelection = [null, null];
+  // ---- ABSORB ANIMATION ----
+  const panel = document.getElementById('myMonsterPanel');
+  panel.classList.add('absorbing');
+  document.getElementById('absorbLabel').textContent = `Absorbed ${prey.name}!`;
 
-  // Flash effect and show the new monster
+  // Flash overlay gold
   const overlay = document.getElementById('collectionOverlay');
-  overlay.style.background = 'rgba(245,158,11,0.3)';
+  overlay.style.background = 'rgba(245,158,11,0.2)';
+
   setTimeout(() => {
     overlay.style.background = '';
+    panel.classList.remove('absorbing');
+    drawMyMonster();
+    updateMyMonsterInfo();
     rebuildCollectionGrid();
-    updateFuseSlots();
-    // Scroll to bottom to show new monster
-    document.getElementById('collGrid').lastElementChild?.scrollIntoView({behavior:'smooth'});
-  }, 400);
+  }, 600);
 }
 
 function hideCollection() {
   document.getElementById('collectionOverlay').classList.remove('active');
-  fuseSelection = [null, null];
 }
 
 // Draw creature on any canvas context (reusable for collection)
@@ -3400,7 +3451,14 @@ function drawCreatureOnCanvas(c, recipe, cx, cy, scale, flipped) {
   c.translate(cx, cy);
   if(flipped) c.scale(-1,1);
   const s = scale;
-  const col = recipe.colors;
+  const rawCol = recipe.colors;
+  // Normalize color fields: support both {base,light,glow} and {skin,sec,hi,dark,pri}
+  const col = {
+    base: rawCol.base || rawCol.skin || '#888',
+    light: rawCol.light || rawCol.sec || lighten(rawCol.skin||'#888', 0.2),
+    dark: rawCol.dark || '#333',
+    glow: rawCol.glow || rawCol.hi || '#ffa',
+  };
 
   // Body
   const bw = 60*s*recipe.body.size, bh = 40*s*recipe.body.bulk;
