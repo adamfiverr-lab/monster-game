@@ -4339,19 +4339,21 @@ function endBattle(result) {
   const sub = document.getElementById('resultSub');
 
   if(result === 'caught') {
-    title.textContent = 'Caught!';
+    // Catching gives better absorb than just killing (20% vs 10%)
+    const gains = applyAbsorb(catchTarget, 0.20, 0.7);
+    title.textContent = 'Caught — Absorbed!';
     title.style.color = '#22c55e';
-    sub.textContent = `${catchTarget.name} joined your team!`;
-    // Add to collection
+    sub.textContent = `${catchTarget.name} captured! ${gains}`;
+    // Also add to collection for later full absorb
     caughtMonsters.push(JSON.parse(JSON.stringify(catchTarget)));
     document.getElementById('collCount').textContent = caughtMonsters.length;
-    // Save to localStorage
     saveCaughtMonsters();
   } else if(result === 'victory') {
-    const xp = enemyMonster.level * 8 + rng(5,15);
-    title.textContent = 'Victory';
+    // Auto-absorb defeated enemy with weaker boost (10% stats, 30% visual)
+    const gains = applyAbsorb(enemyMonster, 0.10, 0.3);
+    title.textContent = 'Victory — Absorbed!';
     title.style.color = 'var(--gold)';
-    sub.textContent = `${enemyMonster.name} defeated! +${xp} XP`;
+    sub.textContent = `${enemyMonster.name} defeated! ${gains}`;
   } else if(result === 'defeat') {
     title.textContent = 'Defeated';
     title.style.color = 'var(--accent)';
@@ -4606,122 +4608,126 @@ function rebuildCollectionGrid() {
   });
 }
 
-function absorbMonster(idx) {
-  if (idx < 0 || idx >= caughtMonsters.length) return;
-  const prey = caughtMonsters[idx];
+// Shared absorption logic — boost is the fraction of prey stats gained (0.1 = 10%, 0.3 = 30%)
+// visualScale controls how much visual growth happens (0.3 = small, 1.0 = full)
+// Returns description string of stat gains
+function applyAbsorb(prey, boost, visualScale) {
   const p = playerMonster;
 
   // ---- STAT GROWTH ----
   p.fusions++;
-  p.level = Math.max(p.level, prey.level) + 1;
+  if (boost >= 0.2) {
+    // Full absorb: level jumps
+    p.level = Math.max(p.level, prey.level) + 1;
+  } else {
+    // Partial absorb: small level gain
+    p.level += (prey.level >= p.level) ? 1 : 0;
+  }
 
-  // Stats: add ~30% of the absorbed monster's stats
-  const boost = 0.3;
-  p.stats.hp += Math.floor(prey.stats.hp * boost);
-  p.stats.atk += Math.floor(prey.stats.atk * boost);
-  p.stats.def += Math.floor(prey.stats.def * boost);
-  p.stats.spd += Math.floor(prey.stats.spd * boost);
+  const hpGain = Math.max(1, Math.floor(prey.stats.hp * boost));
+  const atkGain = Math.max(1, Math.floor(prey.stats.atk * boost));
+  const defGain = Math.max(1, Math.floor(prey.stats.def * boost));
+  const spdGain = Math.max(1, Math.floor(prey.stats.spd * boost));
+  p.stats.hp += hpGain;
+  p.stats.atk += atkGain;
+  p.stats.def += defGain;
+  p.stats.spd += spdGain;
   p.currentHP = p.stats.hp;
 
   // ---- MOVES: replace weakest move if prey has a stronger one ----
-  const preyBest = prey.moves.reduce((a,b) => a.damage > b.damage ? a : b);
-  const myWorst = p.moves.reduce((a,b) => a.damage < b.damage ? a : b);
-  if (preyBest.damage > myWorst.damage) {
-    const worstIdx = p.moves.indexOf(myWorst);
-    p.moves[worstIdx] = { name: preyBest.name, damage: Math.floor(preyBest.damage * 1.1), type: preyBest.type };
+  if (boost >= 0.2) {
+    const preyBest = prey.moves.reduce((a,b) => a.damage > b.damage ? a : b);
+    const myWorst = p.moves.reduce((a,b) => a.damage < b.damage ? a : b);
+    if (preyBest.damage > myWorst.damage) {
+      const worstIdx = p.moves.indexOf(myWorst);
+      p.moves[worstIdx] = { name: preyBest.name, damage: Math.floor(preyBest.damage * 1.1), type: preyBest.type };
+    }
   }
   // Boost all move damage slightly with each fusion
-  p.moves.forEach(m => m.damage = Math.floor(m.damage * 1.05));
+  p.moves.forEach(m => m.damage = Math.floor(m.damage * (1 + 0.05 * visualScale)));
 
   // ---- VISUAL GROWTH ----
-  // Body grows bigger
-  p.body.size = Math.min(2.2, (p.body.size||0.55) + 0.08);
-  p.body.bulk = Math.min(2.0, (p.body.bulk||0.7) + 0.06);
-
-  // Head grows
-  p.head.size = Math.min(1.6, (p.head.size||0.7) + 0.04);
-
-  // Neck thickens
-  p.neck.length = Math.min(1.0, (p.neck.length||0.3) + 0.03);
-  p.neck.thick = Math.min(0.6, (p.neck.thick||0.25) + 0.02);
-
-  // Legs bulk up
-  p.legs.clawSize = Math.min(1.2, (p.legs.clawSize||0.4) + 0.04);
-
-  // Tail grows
-  p.tail.length = Math.min(2.0, (p.tail.length||0.6) + 0.06);
-  p.tail.thick = Math.min(0.5, (p.tail.thick||0.15) + 0.02);
+  const vs = visualScale;
+  p.body.size = Math.min(2.2, (p.body.size||0.55) + 0.08 * vs);
+  p.body.bulk = Math.min(2.0, (p.body.bulk||0.7) + 0.06 * vs);
+  p.head.size = Math.min(1.6, (p.head.size||0.7) + 0.04 * vs);
+  p.neck.length = Math.min(1.0, (p.neck.length||0.3) + 0.03 * vs);
+  p.neck.thick = Math.min(0.6, (p.neck.thick||0.25) + 0.02 * vs);
+  p.legs.clawSize = Math.min(1.2, (p.legs.clawSize||0.4) + 0.04 * vs);
+  p.tail.length = Math.min(2.0, (p.tail.length||0.6) + 0.06 * vs);
+  p.tail.thick = Math.min(0.5, (p.tail.thick||0.15) + 0.02 * vs);
 
   // ---- INHERIT VISUAL TRAITS from prey ----
-  // Gain wings if prey has them and we don't
   if (prey.wings && prey.wings.style !== 'none' && p.wings.style === 'none') {
     p.wings = { ...prey.wings };
   } else if (p.wings.style !== 'none') {
-    p.wings.span = Math.min(2.0, p.wings.span + 0.05);
+    p.wings.span = Math.min(2.0, p.wings.span + 0.05 * vs);
   }
 
-  // Gain horns if prey has them and we don't
   if (prey.horns && prey.horns.style !== 'none' && p.horns.style === 'none') {
     p.horns = { ...prey.horns };
   } else if (p.horns.style !== 'none') {
-    p.horns.size = Math.min(1.5, p.horns.size + 0.05);
+    p.horns.size = Math.min(1.5, p.horns.size + 0.05 * vs);
   }
 
-  // Gain spines/fangs/eyeGlow from prey
   if (prey.spines) p.spines = true;
   if (prey.fangs) p.fangs = true;
   if (prey.eyeGlow) p.eyeGlow = true;
 
-  // Tail style can change to prey's if it's cooler
   const coolTails = ['flame','bladed','spiked','barbed'];
   if (coolTails.indexOf(prey.tail.style) > coolTails.indexOf(p.tail.style)) {
     p.tail.style = prey.tail.style;
   }
 
-  // Armor can upgrade
   const armorTier = ['smooth','fur','scales','plates','rocky'];
   if (armorTier.indexOf(prey.armor) > armorTier.indexOf(p.armor)) {
     p.armor = prey.armor;
   }
 
-  // Legs count can increase
   if ((prey.legs?.count||0) > (p.legs?.count||0)) {
     p.legs.count = prey.legs.count;
   }
 
-  // Type can shift if absorbed monster is different
-  if (prey.type !== p.type && p.fusions % 3 === 0) {
+  // Type can shift if absorbed monster is different (only on full absorb)
+  if (boost >= 0.2 && prey.type !== p.type && p.fusions % 3 === 0) {
     p.type = prey.type;
     p.colors = { ...prey.colors };
-    // Recolor moves to new type
     p.moves.forEach(m => m.type = p.type);
   }
 
-  // ---- NAME EVOLUTION ----
-  // Every few fusions, the name evolves
-  if (p.fusions <= 1) {
-    // Keep original name
-  } else if (p.fusions <= 3) {
-    // Add prey syllable
-    const mid = Math.floor(prey.name.length / 2);
-    p.name = p.name.slice(0, Math.ceil(p.name.length*0.6)) + prey.name.slice(mid);
-  } else {
-    // More dramatic name changes at higher fusion counts
-    const pre = p.name.slice(0, Math.min(4, Math.ceil(p.name.length/2)));
-    const suf = prey.name.slice(Math.floor(prey.name.length/2));
-    p.name = pre + suf;
+  // ---- NAME EVOLUTION (only on full absorb) ----
+  if (boost >= 0.2) {
+    if (p.fusions <= 1) {
+      // Keep original name
+    } else if (p.fusions <= 3) {
+      const mid = Math.floor(prey.name.length / 2);
+      p.name = p.name.slice(0, Math.ceil(p.name.length*0.6)) + prey.name.slice(mid);
+    } else {
+      const pre = p.name.slice(0, Math.min(4, Math.ceil(p.name.length/2)));
+      const suf = prey.name.slice(Math.floor(prey.name.length/2));
+      p.name = pre + suf;
+    }
   }
 
-  // ---- REMOVE ABSORBED MONSTER ----
+  savePlayerMonster();
+  return `+${hpGain} HP, +${atkGain} ATK, +${defGain} DEF, +${spdGain} SPD`;
+}
+
+function absorbMonster(idx) {
+  if (idx < 0 || idx >= caughtMonsters.length) return;
+  const prey = caughtMonsters[idx];
+
+  const gains = applyAbsorb(prey, 0.3, 1.0);
+
+  // Remove from collection
   caughtMonsters.splice(idx, 1);
   saveCaughtMonsters();
-  savePlayerMonster();
   document.getElementById('collCount').textContent = caughtMonsters.length;
 
   // ---- ABSORB ANIMATION ----
   const panel = document.getElementById('myMonsterPanel');
   panel.classList.add('absorbing');
-  document.getElementById('absorbLabel').textContent = `Absorbed ${prey.name}!`;
+  document.getElementById('absorbLabel').textContent = `Absorbed ${prey.name}! ${gains}`;
 
   // Flash overlay gold
   const overlay = document.getElementById('collectionOverlay');
