@@ -709,6 +709,7 @@ const map = {
   tapPing:0, // 0-1 ping animation at target
   particles:[], // ambient map particles
   footsteps:[], // {x,y,t} footprint trail
+  followerX:0, followerY:0, // monster follower position (lags behind player)
 };
 let expStats = { battles:0, loot:[], healed:0, lore:0, gold:0 };
 let expToastTimer = null;
@@ -896,8 +897,9 @@ function generateMap(zone) {
   for (let b=0;b<2;b++) {
     const s=findSpot(12); if(s) {
       const boss = generateEnemy();
-      boss.level = rng(12,18);
-      boss.stats.hp = 80+boss.level*8; boss.stats.atk = 25+boss.level*4; boss.stats.def = 15+boss.level*3;
+      const bossLvl={beach:[3,5],forest:[5,8],deepwoods:[7,11],cave:[9,14]}[zone]||[4,8];
+      boss.level = rng(bossLvl[0],bossLvl[1]);
+      boss.stats.hp = 40+boss.level*5; boss.stats.atk = 12+boss.level*3; boss.stats.def = 8+boss.level*2;
       boss.currentHP = boss.stats.hp;
       boss.body.size = (boss.body?.size||1)*1.3; boss.body.bulk = (boss.body?.bulk||1)*1.2;
       boss.moves.forEach(m => m.damage = Math.floor(m.damage*1.3));
@@ -1001,6 +1003,8 @@ function startExpedition() {
   document.getElementById('expWalkPrompt').textContent = 'Tap to move';
   document.body.classList.add('in-expedition');
   map.angle = Math.PI / 2;
+  map.followerX = map.px - TILE_PX;
+  map.followerY = map.py;
   updateExpUI();
   showWalkPrompt();
 
@@ -1250,6 +1254,17 @@ function updatePlayerMovement() {
     map.moving = true;
   } else {
     map.moving = false;
+  }
+
+  // Monster follower lags behind player
+  const fDx = map.px - map.followerX;
+  const fDy = map.py - map.followerY;
+  const fDist = Math.sqrt(fDx*fDx + fDy*fDy);
+  const followDist = TILE_PX * 0.9; // desired gap
+  if (fDist > followDist) {
+    const fSpd = Math.min(MOVE_SPEED * 0.85, (fDist - followDist) * 0.12);
+    map.followerX += (fDx / fDist) * fSpd;
+    map.followerY += (fDy / fDist) * fSpd;
   }
 }
 
@@ -2498,9 +2513,32 @@ function drawTopDownMap() {
     drawMapObject(obj, sx, sy);
   }
 
-  // Draw player
+  // Draw player's monster follower (behind player if above, or here if same/below)
+  const fsx = map.followerX-map.camX, fsy = map.followerY-map.camY;
+  const followerBob = Math.sin(animT*0.06)*1.5;
+  const monsterMapScale = Math.min(0.35, getPlayerBattleScale() * 0.6 + 0.1);
+  if (map.followerY < map.py) {
+    // Monster is above player — draw first
+    ctx.save();
+    // Shadow
+    ctx.fillStyle='rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(fsx,fsy+8*monsterMapScale/0.2,8,3.5,0,0,Math.PI*2); ctx.fill();
+    drawCreatureOnScene(playerMonster, fsx, fsy+followerBob-4, monsterMapScale, map.followerX < map.px);
+    ctx.restore();
+  }
+
+  // Draw player character
   const psx = map.px-map.camX, psy = map.py-map.camY;
   drawPlayerTopDown(psx, psy);
+
+  // Draw monster if at or below player
+  if (map.followerY >= map.py) {
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(fsx,fsy+8*monsterMapScale/0.2,8,3.5,0,0,Math.PI*2); ctx.fill();
+    drawCreatureOnScene(playerMonster, fsx, fsy+followerBob-4, monsterMapScale, map.followerX < map.px);
+    ctx.restore();
+  }
 
   // Draw objects that are in front of or at player Y
   for (const obj of visibleObjects) {
@@ -4087,7 +4125,9 @@ function generateEnemy(){
   const types=ZONE_TYPES[currentZone]||['earth'];
   const type=pick(types);
   const col=TYPE_COLORS[type];
-  const level=rng(3,12);
+  // Zone-specific level ranges (easier early zones)
+  const levelRange={beach:[1,3],forest:[2,5],deepwoods:[4,8],cave:[5,10]}[currentZone]||[1,5];
+  const level=rng(levelRange[0],levelRange[1]);
   return {
     name:pick(NAME_PRE)+pick(NAME_SUF),
     type, level,
@@ -4103,9 +4143,9 @@ function generateEnemy(){
     armor:pick(['scales','plates','smooth','rocky','fur']),
     spines:Math.random()>0.4, fangs:Math.random()>0.3, eyeGlow:Math.random()>0.3,
     breathEffect:false, scarred:Math.random()>0.7,
-    stats:{hp:40+level*5, atk:15+level*3, def:10+level*2, spd:15+level*2},
-    currentHP: 40+level*5,
-    moves:pickN(MOVE_NAMES[type],4).map(n=>({name:n,damage:rng(12,35+level*2),type}))
+    stats:{hp:20+level*4, atk:8+level*2, def:5+level*2, spd:10+level*2},
+    currentHP: 20+level*4,
+    moves:pickN(MOVE_NAMES[type],4).map(n=>({name:n,damage:rng(6,15+level*2),type}))
   };
 }
 
