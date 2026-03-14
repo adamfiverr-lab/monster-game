@@ -393,7 +393,7 @@
     padding:8px; text-align:center; position:relative;
   }
   .coll-card canvas {
-    width:100%; aspect-ratio:1; border-radius:8px;
+    width:100%; aspect-ratio:13/12; border-radius:8px;
     background:var(--abyss);
   }
   .coll-card .coll-name {
@@ -438,8 +438,8 @@
     margin-bottom:4px;
   }
   #myMonsterCanvas {
-    width:160px; height:130px; display:block; margin:0 auto;
-    border-radius:8px;
+    width:180px; height:150px; display:block; margin:0 auto;
+    border-radius:8px; background:var(--abyss);
   }
   #myMonsterName {
     font-family:'Cinzel',serif; font-weight:900; font-size:16px;
@@ -620,7 +620,7 @@ function darken(h,a){const c=hexToRgb(h);return rgbToHex(c.r*(1-a),c.g*(1-a),c.b
 
 // ---- CANVAS SETUP ----
 const sceneCanvas = document.getElementById('scene');
-const ctx = sceneCanvas.getContext('2d');
+let ctx = sceneCanvas.getContext('2d');
 let W, H;
 function resizeCanvas(){
   const r = window.devicePixelRatio || 1;
@@ -3249,15 +3249,20 @@ function showCollection() {
 function drawMyMonster() {
   const cvs = document.getElementById('myMonsterCanvas');
   const dpr = window.devicePixelRatio || 1;
-  const w = 160, h = 130;
+  const w = 180, h = 150;
   cvs.width = w * dpr; cvs.height = h * dpr;
   cvs.style.width = w + 'px'; cvs.style.height = h + 'px';
   const c = cvs.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // Scale creature to fit — bigger monsters drawn bigger
-  const baseScale = 0.003 + playerMonster.fusions * 0.0004;
-  const scale = Math.min(0.008, baseScale);
-  drawCreatureOnCanvas(c, playerMonster, w/2, h*0.58, scale * w, false);
+
+  // Compute scale to fit creature in canvas
+  // drawCreatureOnScene uses S = 40 * body.size, extends ~S*2.5 wide, ~S*4 tall
+  const S = 40 * (playerMonster.body?.size || 0.55);
+  const estW = S * 2.8;
+  const estH = S * 4.5;
+  const fitScale = Math.min(w * 0.75 / estW, h * 0.75 / estH);
+
+  drawCreatureOnCanvas(c, playerMonster, w/2 + 10, h*0.6, fitScale, false);
 }
 
 function updateMyMonsterInfo() {
@@ -3285,15 +3290,18 @@ function rebuildCollectionGrid() {
     card.className = 'coll-card absorb-ready';
 
     const cvs = document.createElement('canvas');
-    const size = 130;
+    const cw = 130, ch = 120;
     const dpr = window.devicePixelRatio || 1;
-    cvs.width = size * dpr;
-    cvs.height = size * dpr;
-    cvs.style.width = size + 'px';
-    cvs.style.height = size + 'px';
+    cvs.width = cw * dpr;
+    cvs.height = ch * dpr;
+    cvs.style.width = cw + 'px';
+    cvs.style.height = ch + 'px';
     const c = cvs.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawCreatureOnCanvas(c, mon, size/2, size*0.55, size*0.004, false);
+    // Scale to fit creature in card
+    const monS = 40 * (mon.body?.size || 0.9);
+    const monFitScale = Math.min(cw * 0.7 / (monS*2.8), ch * 0.7 / (monS*4.5));
+    drawCreatureOnCanvas(c, mon, cw/2 + 8, ch*0.58, monFitScale, false);
 
     const nameDiv = document.createElement('div');
     nameDiv.className = 'coll-name';
@@ -3446,147 +3454,12 @@ function hideCollection() {
 }
 
 // Draw creature on any canvas context (reusable for collection)
-function drawCreatureOnCanvas(c, recipe, cx, cy, scale, flipped) {
-  c.save();
-  c.translate(cx, cy);
-  if(flipped) c.scale(-1,1);
-  const s = scale;
-  const rawCol = recipe.colors;
-  // Normalize color fields: support both {base,light,glow} and {skin,sec,hi,dark,pri}
-  const col = {
-    base: rawCol.base || rawCol.skin || '#888',
-    light: rawCol.light || rawCol.sec || lighten(rawCol.skin||'#888', 0.2),
-    dark: rawCol.dark || '#333',
-    glow: rawCol.glow || rawCol.hi || '#ffa',
-  };
-
-  // Body
-  const bw = 60*s*recipe.body.size, bh = 40*s*recipe.body.bulk;
-  c.fillStyle = col.base;
-  c.beginPath(); c.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2); c.fill();
-  // body highlight
-  c.fillStyle = col.light;
-  c.beginPath(); c.ellipse(0, -bh*0.3, bw*0.7, bh*0.4, 0, 0, Math.PI*2); c.fill();
-
-  // Armor texture
-  if(recipe.armor==='scales'||recipe.armor==='plates') {
-    c.strokeStyle = col.dark; c.lineWidth = 0.5*s;
-    for(let i=-3;i<=3;i++) for(let j=-2;j<=2;j++) {
-      const sx = i*bw*0.28, sy = j*bh*0.35;
-      if(sx*sx/(bw*bw)+sy*sy/(bh*bh)<0.8) {
-        c.beginPath(); c.arc(sx, sy, 4*s, 0, Math.PI*2); c.stroke();
-      }
-    }
-  }
-
-  // Neck
-  const neckLen = 30*s*recipe.neck.length;
-  const neckT = 12*s*recipe.neck.thick;
-  c.fillStyle = col.base;
-  c.beginPath();
-  c.moveTo(-bw*0.6, -bh*0.3);
-  c.quadraticCurveTo(-bw*0.6-neckLen*0.3, -bh*0.3-neckLen*0.7, -bw*0.5-neckLen*0.5, -bh*0.3-neckLen);
-  c.lineTo(-bw*0.5-neckLen*0.5+neckT, -bh*0.3-neckLen);
-  c.quadraticCurveTo(-bw*0.6+neckT, -bh*0.3-neckLen*0.5, -bw*0.6+neckT*1.5, -bh*0.3);
-  c.fill();
-
-  // Head
-  const hx = -bw*0.5-neckLen*0.5, hy = -bh*0.3-neckLen;
-  const hs = 18*s*recipe.head.size;
-  c.fillStyle = col.base;
-  c.beginPath(); c.ellipse(hx, hy, hs*1.3, hs, -0.3, 0, Math.PI*2); c.fill();
-  c.fillStyle = col.light;
-  c.beginPath(); c.ellipse(hx, hy-hs*0.2, hs*0.9, hs*0.5, -0.3, 0, Math.PI*2); c.fill();
-
-  // Eye
-  c.fillStyle = recipe.eyeGlow ? col.glow : '#fff';
-  c.beginPath(); c.arc(hx-hs*0.4, hy-hs*0.2, 3*s, 0, Math.PI*2); c.fill();
-  c.fillStyle = '#111';
-  c.beginPath(); c.arc(hx-hs*0.4, hy-hs*0.2, 1.5*s, 0, Math.PI*2); c.fill();
-
-  // Horns
-  if(recipe.horns.style!=='none') {
-    c.strokeStyle = col.dark; c.lineWidth = 2.5*s; c.lineCap = 'round';
-    const hornS = 14*s*recipe.horns.size;
-    c.beginPath(); c.moveTo(hx, hy-hs); c.lineTo(hx-hornS*0.3, hy-hs-hornS); c.stroke();
-    c.beginPath(); c.moveTo(hx+hs*0.4, hy-hs*0.7); c.lineTo(hx+hs*0.4+hornS*0.2, hy-hs*0.7-hornS*0.8); c.stroke();
-  }
-
-  // Fangs
-  if(recipe.fangs) {
-    c.fillStyle = '#ddd';
-    c.beginPath(); c.moveTo(hx-hs*0.8, hy+hs*0.3); c.lineTo(hx-hs*0.6, hy+hs*0.8); c.lineTo(hx-hs*0.4, hy+hs*0.3); c.fill();
-  }
-
-  // Legs
-  if(recipe.legs.count >= 2) {
-    c.strokeStyle = col.dark; c.lineWidth = 5*s; c.lineCap = 'round';
-    // front legs
-    c.beginPath(); c.moveTo(-bw*0.3, bh*0.6); c.lineTo(-bw*0.4, bh+18*s); c.stroke();
-    c.beginPath(); c.moveTo(-bw*0.1, bh*0.6); c.lineTo(-bw*0.15, bh+20*s); c.stroke();
-    // claws
-    const clawS = 4*s*recipe.legs.clawSize;
-    c.fillStyle = col.dark;
-    c.beginPath(); c.arc(-bw*0.4, bh+18*s, clawS, 0, Math.PI*2); c.fill();
-    c.beginPath(); c.arc(-bw*0.15, bh+20*s, clawS, 0, Math.PI*2); c.fill();
-  }
-  if(recipe.legs.count >= 4) {
-    c.strokeStyle = col.dark; c.lineWidth = 5*s; c.lineCap = 'round';
-    c.beginPath(); c.moveTo(bw*0.1, bh*0.6); c.lineTo(bw*0.05, bh+18*s); c.stroke();
-    c.beginPath(); c.moveTo(bw*0.35, bh*0.6); c.lineTo(bw*0.4, bh+16*s); c.stroke();
-    const clawS = 4*s*recipe.legs.clawSize;
-    c.fillStyle = col.dark;
-    c.beginPath(); c.arc(bw*0.05, bh+18*s, clawS, 0, Math.PI*2); c.fill();
-    c.beginPath(); c.arc(bw*0.4, bh+16*s, clawS, 0, Math.PI*2); c.fill();
-  }
-
-  // Tail
-  const tailLen = 40*s*recipe.tail.length;
-  c.strokeStyle = col.base; c.lineWidth = 6*s*recipe.tail.thick; c.lineCap = 'round';
-  c.beginPath();
-  c.moveTo(bw*0.7, 0);
-  c.quadraticCurveTo(bw*0.7+tailLen*0.5, tailLen*0.3, bw*0.7+tailLen, tailLen*0.1);
-  c.stroke();
-  // tail tip
-  if(recipe.tail.style==='flame') {
-    c.fillStyle = col.glow;
-    c.beginPath(); c.arc(bw*0.7+tailLen, tailLen*0.1, 5*s, 0, Math.PI*2); c.fill();
-  } else if(recipe.tail.style==='spiked'||recipe.tail.style==='bladed') {
-    c.fillStyle = col.dark;
-    const tx = bw*0.7+tailLen, ty = tailLen*0.1;
-    c.beginPath(); c.moveTo(tx, ty-6*s); c.lineTo(tx+10*s, ty); c.lineTo(tx, ty+6*s); c.fill();
-  }
-
-  // Wings
-  if(recipe.wings.style!=='none') {
-    const wSpan = 50*s*recipe.wings.span;
-    c.fillStyle = col.base+'88';
-    c.strokeStyle = col.dark; c.lineWidth = 2*s;
-    c.beginPath();
-    c.moveTo(0, -bh*0.5);
-    c.quadraticCurveTo(-wSpan*0.3, -bh-wSpan*0.8, 0, -bh-wSpan*0.6);
-    c.quadraticCurveTo(wSpan*0.2, -bh-wSpan*0.3, wSpan*0.1, -bh*0.3);
-    c.fill(); c.stroke();
-    // second wing (behind)
-    c.globalAlpha = 0.5;
-    c.beginPath();
-    c.moveTo(bw*0.2, -bh*0.4);
-    c.quadraticCurveTo(bw*0.2-wSpan*0.2, -bh-wSpan*0.6, bw*0.2+wSpan*0.1, -bh-wSpan*0.4);
-    c.quadraticCurveTo(bw*0.2+wSpan*0.2, -bh-wSpan*0.1, bw*0.2+wSpan*0.15, -bh*0.2);
-    c.fill(); c.stroke();
-    c.globalAlpha = 1;
-  }
-
-  // Spines
-  if(recipe.spines) {
-    c.fillStyle = col.dark;
-    for(let i=0;i<5;i++) {
-      const sx = -bw*0.5+i*bw*0.25, sy = -bh;
-      c.beginPath(); c.moveTo(sx-3*s, sy); c.lineTo(sx, sy-8*s); c.lineTo(sx+3*s, sy); c.fill();
-    }
-  }
-
-  c.restore();
+// Draws creature on any canvas context using the full battle renderer
+function drawCreatureOnCanvas(targetCtx, recipe, cx, cy, scale, flipped) {
+  const savedCtx = ctx;
+  ctx = targetCtx;
+  drawCreatureOnScene(recipe, cx, cy, scale, flipped);
+  ctx = savedCtx;
 }
 
 // Load saved monsters on startup
